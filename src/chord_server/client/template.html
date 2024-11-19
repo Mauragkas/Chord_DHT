@@ -1,0 +1,181 @@
+<!doctype html>
+<html>
+    <head>
+        <title>ChordRing Dashboard</title>
+        <link
+            href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+            rel="stylesheet"
+        />
+        <link
+            href="https://cdnjs.cloudflare.com/ajax/libs/inter/3.19.3/inter.css"
+            rel="stylesheet"
+        />
+        <script>
+            async function fetchData() {
+                try {
+                    const response = await fetch("/");
+                    const html = await response.text();
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, "text/html");
+                    const nodes = doc.querySelector("ul.nodes").innerHTML;
+                    const logs = doc.querySelector("ul.logs").innerHTML;
+                    document.querySelector("ul.nodes").innerHTML = nodes;
+                    document.querySelector("ul.logs").innerHTML = logs;
+                } catch (error) {
+                    console.error("Error fetching data:", error);
+                }
+            }
+            document.addEventListener("DOMContentLoaded", () => {
+                setInterval(fetchData, 100);
+            });
+        </script>
+        <style>
+            :root {
+                --ayu-bg: #0d1017;
+                --ayu-bg-alt: #131721;
+                --ayu-fg: #b3b1ad;
+                --ayu-orange: #ff8f40;
+                --ayu-green: #aad94c;
+                --ayu-blue: #59c2ff;
+                --ayu-purple: #d2a6ff;
+                --ayu-yellow: #ffb454;
+                --ayu-border: #1d222d;
+            }
+            body {
+                font-family: "FreeSans", sans-serif;
+                background-color: var(--ayu-bg);
+                color: var(--ayu-fg);
+            }
+            .card {
+                background-color: var(--ayu-bg-alt);
+                border: 1px solid var(--ayu-border);
+            }
+            .content-bg {
+                background-color: var(--ayu-bg);
+            }
+            .accent-text {
+                color: var(--ayu-orange);
+            }
+            .badge-live {
+                background-color: rgba(170, 217, 76, 0.2);
+                color: var (--ayu-green);
+            }
+            .badge-realtime {
+                background-color: rgba(89, 194, 255, 0.2);
+                color: var(--ayu-blue);
+            }
+            .logs-container {
+                max-height: 250px;
+                min-height: 250px;
+                overflow-y: auto;
+            }
+            ::-webkit-scrollbar {
+                width: 8px;
+            }
+            ::-webkit-scrollbar-track {
+                background: var(--ayu-bg);
+            }
+            ::-webkit-scrollbar-thumb {
+                background: var(--ayu-border);
+                border-radius: 4px;
+            }
+            ::-webkit-scrollbar-thumb:hover {
+                background: #2d3343;
+            }
+            @keyframes spin {
+                0% {
+                    transform: rotate(0deg);
+                }
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-8">
+            <header class="mb-8">
+                <div class="flex items-center mb-2">
+                    <svg
+                        class="h-8 w-8 mr-3"
+                        style="
+                            color: var(--ayu-orange);
+                            animation: spin 20s linear infinite;
+                        "
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                    >
+                        <circle
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            stroke-dasharray="1,3.8"
+                        />
+                    </svg>
+                    <h1 class="text-3xl font-bold accent-text">
+                        DHT ChordRing Dashboard
+                    </h1>
+                </div>
+                <p class="text-sm" style="color: var(--ayu-purple)">
+                    Real-time node monitoring and system logs
+                </p>
+            </header>
+
+            <div class="grid grid-cols-12 gap-8">
+                <!-- Nodes Section -->
+                <div class="col-span-3 card rounded-lg shadow-lg p-6">
+                    <div class="flex items-center justify-center mb-4">
+                        <h2
+                            class="text-xl font-semibold"
+                            style="color: var(--ayu-yellow)"
+                        >
+                            Active Nodes
+                        </h2>
+                        <span
+                            class="ml-3 px-2.5 py-0.5 rounded-full text-sm font-medium badge-live"
+                            >Live</span
+                        >
+                    </div>
+                    <div
+                        class="content-bg rounded-lg p-4 border border-opacity-10"
+                        style="border-color: var(--ayu-border)"
+                    >
+                        <ul
+                            class="list-none p-0 space-y-2 nodes logs-container text-center"
+                        >
+                            {nodes}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Logs Section -->
+                <div class="col-span-9 card rounded-lg shadow-lg p-6">
+                    <div class="flex items-center mb-4">
+                        <h2
+                            class="text-xl font-semibold"
+                            style="color: var(--ayu-yellow)"
+                        >
+                            System Logs
+                        </h2>
+                        <span
+                            class="ml-3 px-2.5 py-0.5 rounded-full text-sm font-medium badge-realtime"
+                            >Real-time</span
+                        >
+                    </div>
+                    <div
+                        class="content-bg rounded-lg p-4 border border-opacity-10"
+                        style="border-color: var(--ayu-border)"
+                    >
+                        <ul class="list-none p-0 space-y-2 logs logs-container">
+                            {logs}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>
