@@ -4,8 +4,8 @@ use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use circula_list::CircularList;
 use msg::Message;
 use std::fs;
-use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex};
 
 // Represents a node in the Chord ring network
 #[derive(Debug, Clone)]
@@ -14,6 +14,7 @@ pub struct ChordRing {
     size: usize,
     tx: mpsc::Sender<Message>,
     logs: Arc<Mutex<Vec<String>>>,
+    last_used_index: Arc<Mutex<usize>>,
 }
 
 // Trait defining the core functionality for ChordRing
@@ -35,6 +36,7 @@ impl ChordRingInterface for ChordRing {
             size: 2_usize.pow(*M as u32),
             tx,
             logs: Arc::new(Mutex::new(Vec::new())),
+            last_used_index: Arc::new(Mutex::new(0)),
         };
 
         // Spawn a new thread to handle incoming messages
@@ -43,25 +45,21 @@ impl ChordRingInterface for ChordRing {
             while let Some(msg) = rx.recv().await {
                 match msg {
                     Message::ReqKnownNode { node_id } => {
-                        #[cfg(debug_assertions)]
-                        println!("(DHT)Join request from node {}", node_id);
-                        chord_ring_clone.logs.lock().unwrap().push(format!(
-                            "{}: <span class=\"font-semibold\">Join request from node {}</span>",
-                            chrono::Utc::now(),
-                            node_id
-                        ));
+                        log_message!(chord_ring_clone, "Join request from node {}", node_id);
                         chord_ring_clone.handle_known_node_req(node_id).await;
                     }
-                    Message::Kys => {
-                        #[cfg(debug_assertions)]
-                        println!("(DHT)Kys message received");
-                        chord_ring_clone.logs.lock().unwrap().push(format!(
-                            "{}: <span class=\"font-semibold\">(DHT)Kys message received</span>",
-                            chrono::Utc::now()
-                        ));
-                        // drop the receiver to exit the loop
-                        drop(rx);
-                        break;
+                    Message::Leave { node_id } => {
+                        log_message!(
+                            chord_ring_clone,
+                            "Leave message received from node {}",
+                            node_id
+                        );
+                        let mut nodes = chord_ring_clone.nodes.lock().await;
+
+                        let index_to_remove = nodes.iter().position(|n| n == &node_id);
+                        if let Some(index) = index_to_remove {
+                            nodes.remove(index);
+                        }
                     }
                     _ => {}
                 }
@@ -72,13 +70,7 @@ impl ChordRingInterface for ChordRing {
     }
 
     async fn handle_message(&self, msg: Message) -> impl Responder {
-        #[cfg(debug_assertions)]
-        println!("(DHT)Handling message: {:?}", msg);
-        self.logs.lock().unwrap().push(format!(
-            "{}: <span class=\"font-semibold\">(DHT)Handling message: {:?}</span>",
-            chrono::Utc::now(),
-            msg
-        ));
+        log_message!(self, "Handling message: {:?}", msg);
 
         let tx = self.tx.clone();
         if let Err(err) = tx.send(msg).await {
@@ -95,14 +87,8 @@ impl ChordRingInterface for ChordRing {
 
     async fn run(&self) -> std::io::Result<(String, u16)> {
         let port = *PORT;
-
-        #[cfg(debug_assertions)]
-        println!("Running ChordRing server on port: {}", port);
-        self.logs.lock().unwrap().push(format!(
-            "{}: <span class=\"font-semibold\">Running ChordRing server on port: {}</span>",
-            chrono::Utc::now(),
-            port
-        ));
+        println!("Running ChordRing server on http://{}:{}", "0.0.0.0", port);
+        log_message!(self, "Running ChordRing server on port: {}", port);
 
         let app_state = AppState {
             logs: self.logs.clone(),
@@ -137,68 +123,55 @@ impl ChordRingInterface for ChordRing {
 
 impl ChordRing {
     async fn handle_known_node_req(&self, node: String) {
-        #[cfg(debug_assertions)]
-        println!("(DHT)Handling known node request from node: {}", node);
-        self.logs.lock().unwrap().push(format!(
-            "{}: <span class=\"font-semibold\">Handling known node request from node: {}</span>",
-            chrono::Utc::now(),
-            node
-        ));
+        log_message!(self, "Handling known node request from node: {}", node);
 
         // Check if ring is full
-        if self.nodes.lock().unwrap().len() == self.size {
-            #[cfg(debug_assertions)]
-            println!("(DHT)Ring is full. Cannot add more nodes.");
-            self.logs.lock().unwrap().push(format!(
-                "{}: <span class=\"font-semibold\">Ring is full. Cannot add more nodes.</span>",
-                chrono::Utc::now()
-            ));
+        if self.nodes.lock().await.len() == self.size {
+            log_message!(self, "Ring is full. Cannot add more nodes.");
             send_post_request!(&format!("http://{}/msg", node), Message::RingIsFull);
             return;
         }
 
         // Check if node already exists in the ring
-        if self.nodes.lock().unwrap().contains(&node) {
-            #[cfg(debug_assertions)]
-            println!("(DHT)Node already exists in the ring");
+        if self.nodes.lock().await.contains(&node) {
+            log_message!(self, "Node already exists in the ring");
             send_post_request!(&format!("http://{}/msg", node), Message::NodeExists);
             return;
         }
 
         let node_to_join = {
-            let nodes = self.nodes.lock().unwrap();
+            let mut index = self.last_used_index.lock().await;
+            let nodes = self.nodes.lock().await;
 
-            // If the ring is empty, the node to join is the node itself
             if nodes.is_empty() {
                 node.clone()
             } else {
-                // Otherwise, the node to join is the first node in the ring
-                nodes.front().unwrap().clone()
+                *index = (*index + 1) % nodes.len();
+                nodes.get(*index).unwrap().clone()
             }
         };
         send_post_request!(
             &format!("http://{}/msg", node),
             Message::ResKnownNode {
-                node_id: node_to_join
+                node_id: node_to_join.clone()
             }
         );
 
+        // Log the response node id
+        log_message!(
+            self,
+            "Sent ResKnownNode with node_id: {} to node: {}",
+            node_to_join,
+            node
+        );
+
         // Add the new node to the ring
-        self.nodes.lock().unwrap().push_back(node);
-        // rotate the ring to the left
-        self.nodes.lock().unwrap().rotate_left(); // this is to implement the round-robin strategy
+        self.nodes.lock().await.push_back(node);
     }
 
     pub async fn req_known_node(&self, node: String) {
-        #[cfg(debug_assertions)]
-        println!("(DHT)Requesting node to join: {}", node);
-        self.logs.lock().unwrap().push(format!(
-            "{}: <span class=\"font-semibold\">{}: Requesting known node to join</span>",
-            chrono::Utc::now(),
-            node
-        ));
+        log_message!(self, "Requesting known node to join: {}", node);
 
-        // let _ = self.tx.send(Message::ReqJoin { node_id: node }).await;
         let _ = self.handle_known_node_req(node).await;
     }
 }
@@ -215,13 +188,13 @@ async fn handle_index(state: web::Data<AppState>) -> impl Responder {
     let nodes_html = state
         .nodes
         .lock()
-        .unwrap()
+        .await
         .iter()
         .map(|node| {
             format!(
                 "<li><a href=\"http://{0}\">{0} ({1})</a></li>",
                 node,
-                hash(node)
+                hash(&node)
             )
         })
         .collect::<String>();
@@ -229,7 +202,7 @@ async fn handle_index(state: web::Data<AppState>) -> impl Responder {
     let logs_html = state
         .logs
         .lock()
-        .unwrap()
+        .await
         .iter()
         .map(|log| format!("<li>{}</li>", log))
         .collect::<String>();

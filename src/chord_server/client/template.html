@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html data-theme="dark">
     <head>
         <title>ChordRing Dashboard</title>
         <link
@@ -10,22 +10,41 @@
             href="https://cdnjs.cloudflare.com/ajax/libs/inter/3.19.3/inter.css"
             rel="stylesheet"
         />
+        <meta name="color-scheme" content="dark" />
         <script>
+            // Initialize variables to store previous data
+            let prevNodes = "";
+            let prevLogs = "";
+
             async function fetchData() {
                 try {
                     const response = await fetch("/");
                     const html = await response.text();
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(html, "text/html");
-                    const nodes = doc.querySelector("ul.nodes").innerHTML;
-                    const logs = doc.querySelector("ul.logs").innerHTML;
-                    document.querySelector("ul.nodes").innerHTML = nodes;
-                    document.querySelector("ul.logs").innerHTML = logs;
+
+                    // Extract new data
+                    const newNodes = doc.querySelector("ul.nodes").innerHTML;
+                    const newLogs = doc.querySelector("ul.logs").innerHTML;
+
+                    // Compare and update nodes
+                    if (newNodes !== prevNodes) {
+                        document.querySelector("ul.nodes").innerHTML = newNodes;
+                        prevNodes = newNodes;
+                    }
+
+                    // Compare and update logs
+                    if (newLogs !== prevLogs) {
+                        document.querySelector("ul.logs").innerHTML = newLogs;
+                        prevLogs = newLogs;
+                    }
                 } catch (error) {
                     console.error("Error fetching data:", error);
                 }
             }
+
             document.addEventListener("DOMContentLoaded", () => {
+                // Poll every 1 second (adjust as needed)
                 setInterval(fetchData, 100);
             });
         </script>
@@ -40,6 +59,7 @@
                 --ayu-purple: #d2a6ff;
                 --ayu-yellow: #ffb454;
                 --ayu-border: #1d222d;
+                color-scheme: dark;
             }
             body {
                 font-family: "FreeSans", sans-serif;

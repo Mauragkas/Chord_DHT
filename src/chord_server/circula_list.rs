@@ -1,48 +1,20 @@
+use std::collections::HashMap;
 use std::fmt;
-use std::marker::PhantomData;
-use std::ptr::NonNull;
-
-pub struct Node<T> {
-    data: T,
-    next: NonNull<Node<T>>,
-    prev: NonNull<Node<T>>,
-}
 
 pub struct CircularList<T> {
-    head: Option<NonNull<Node<T>>>,
+    items: HashMap<usize, T>,
+    head: usize,
+    tail: usize,
     len: usize,
-    marker: PhantomData<Box<Node<T>>>,
-}
-
-// We need to implement Drop to prevent memory leaks
-impl<T> Drop for CircularList<T> {
-    fn drop(&mut self) {
-        while self.pop_front().is_some() {}
-    }
-}
-
-impl<T> Node<T> {
-    fn new(data: T) -> NonNull<Self> {
-        let node = Box::new(Self {
-            data,
-            next: NonNull::dangling(),
-            prev: NonNull::dangling(),
-        });
-        let node_ptr = NonNull::new(Box::into_raw(node)).unwrap();
-        unsafe {
-            (*node_ptr.as_ptr()).next = node_ptr;
-            (*node_ptr.as_ptr()).prev = node_ptr;
-        }
-        node_ptr
-    }
 }
 
 impl<T> CircularList<T> {
     pub fn new() -> Self {
         CircularList {
-            head: None,
+            items: HashMap::new(),
+            head: 0,
+            tail: 0,
             len: 0,
-            marker: PhantomData,
         }
     }
 
@@ -58,179 +30,119 @@ impl<T> CircularList<T> {
     where
         T: PartialEq,
     {
-        self.iter().any(|x| x == data)
+        self.items.values().any(|x| x == data)
     }
 
     pub fn push_back(&mut self, data: T) {
-        let new_node = Node::new(data);
-        self.len += 1;
-
-        match self.head {
-            None => {
-                self.head = Some(new_node);
-            }
-            Some(head) => unsafe {
-                let tail = (*head.as_ptr()).prev;
-                (*new_node.as_ptr()).next = head;
-                (*new_node.as_ptr()).prev = tail;
-                (*head.as_ptr()).prev = new_node;
-                (*tail.as_ptr()).next = new_node;
-            },
+        if self.is_empty() {
+            self.items.insert(0, data);
+            self.head = 0;
+            self.tail = 0;
+        } else {
+            self.tail = (self.tail + 1) % (self.len + 1);
+            self.items.insert(self.tail, data);
         }
+        self.len += 1;
     }
 
     pub fn push_front(&mut self, data: T) {
-        self.push_back(data);
-        if self.len > 1 {
-            unsafe {
-                self.head = Some((*self.head.unwrap().as_ptr()).prev);
-            }
+        if self.is_empty() {
+            self.items.insert(0, data);
+            self.head = 0;
+            self.tail = 0;
+        } else {
+            self.head = if self.head == 0 {
+                self.len
+            } else {
+                self.head - 1
+            };
+            self.items.insert(self.head, data);
         }
+        self.len += 1;
     }
 
     pub fn pop_front(&mut self) -> Option<T> {
-        self.head.map(|head| unsafe {
+        if self.is_empty() {
+            None
+        } else {
+            let item = self.items.remove(&self.head);
             self.len -= 1;
-            let old_head = Box::from_raw(head.as_ptr());
-            let old_data = std::ptr::read(&old_head.data);
-
-            if self.len == 0 {
-                self.head = None;
-            } else {
-                let new_head = old_head.next;
-                let tail = old_head.prev;
-                (*new_head.as_ptr()).prev = tail;
-                (*tail.as_ptr()).next = new_head;
-                self.head = Some(new_head);
+            if !self.is_empty() {
+                self.head = (self.head + 1) % (self.len + 1);
             }
-
-            old_data
-        })
+            item
+        }
     }
 
     pub fn pop_back(&mut self) -> Option<T> {
         if self.is_empty() {
             None
         } else {
-            unsafe {
-                let tail = (*self.head.unwrap().as_ptr()).prev;
-                let old_tail = Box::from_raw(tail.as_ptr());
-                let old_data = std::ptr::read(&old_tail.data);
-
-                self.len -= 1;
-                if self.len == 0 {
-                    self.head = None;
+            let item = self.items.remove(&self.tail);
+            self.len -= 1;
+            if !self.is_empty() {
+                self.tail = if self.tail == 0 {
+                    self.len
                 } else {
-                    let new_tail = old_tail.prev;
-                    let head = old_tail.next;
-                    (*head.as_ptr()).prev = new_tail;
-                    (*new_tail.as_ptr()).next = head;
-                }
-
-                Some(old_data)
+                    self.tail - 1
+                };
             }
+            item
         }
     }
 
     pub fn front(&self) -> Option<&T> {
-        unsafe { self.head.map(|node| &(*node.as_ptr()).data) }
+        self.items.get(&self.head)
     }
 
     pub fn back(&self) -> Option<&T> {
-        unsafe {
-            self.head
-                .map(|head| &(*(*head.as_ptr()).prev.as_ptr()).data)
-        }
+        self.items.get(&self.tail)
     }
 
-    pub fn rotate_left(&mut self) {
-        if self.len > 1 {
-            unsafe {
-                self.head = Some((*self.head.unwrap().as_ptr()).next);
-            }
-        }
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        let len = self.len;
+        let head = self.head;
+        let items = &self.items;
+
+        (0..len).map(move |i| {
+            let actual_index = (head + i) % (len + 1);
+            items.get(&actual_index).unwrap()
+        })
     }
 
-    pub fn rotate_right(&mut self) {
-        if self.len > 1 {
-            unsafe {
-                self.head = Some((*self.head.unwrap().as_ptr()).prev);
-            }
-        }
-    }
-
-    pub fn iter(&self) -> Iter<'_, T> {
-        Iter {
-            head: self.head,
-            current: self.head,
-            len: self.len,
-            marker: PhantomData,
-        }
-    }
-
-    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
-        IterMut {
-            head: self.head,
-            current: self.head,
-            len: self.len,
-            marker: PhantomData,
-        }
-    }
-}
-
-pub struct Iter<'a, T> {
-    head: Option<NonNull<Node<T>>>,
-    current: Option<NonNull<Node<T>>>,
-    len: usize,
-    marker: PhantomData<&'a Node<T>>,
-}
-
-impl<'a, T> Iterator for Iter<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.len == 0 {
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if index >= self.len {
             None
         } else {
-            self.len -= 1;
-            self.current.map(|current| unsafe {
-                let current_ref = &(*current.as_ptr()).data;
-                self.current = Some((*current.as_ptr()).next);
-                current_ref
-            })
+            let actual_index = (self.head + index) % (self.len + 1);
+            self.items.get(&actual_index)
         }
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len, Some(self.len))
-    }
-}
-
-pub struct IterMut<'a, T> {
-    head: Option<NonNull<Node<T>>>,
-    current: Option<NonNull<Node<T>>>,
-    len: usize,
-    marker: PhantomData<&'a mut Node<T>>,
-}
-
-impl<'a, T> Iterator for IterMut<'a, T> {
-    type Item = &'a mut T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.len == 0 {
+    pub fn remove(&mut self, index: usize) -> Option<T> {
+        if index >= self.len {
             None
         } else {
-            self.len -= 1;
-            self.current.map(|current| unsafe {
-                let current_ptr = current.as_ptr();
-                self.current = Some((*current_ptr).next);
-                &mut (*current_ptr).data
-            })
-        }
-    }
+            let actual_index = (self.head + index) % (self.len + 1);
+            let item = self.items.remove(&actual_index);
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len, Some(self.len))
+            // Shift all items after the removed one
+            for i in actual_index..self.tail {
+                if let Some(next_item) = self.items.remove(&(i + 1)) {
+                    self.items.insert(i, next_item);
+                }
+            }
+
+            self.len -= 1;
+            if self.len > 0 {
+                self.tail = if self.tail == 0 {
+                    self.len
+                } else {
+                    self.tail - 1
+                };
+            }
+            item
+        }
     }
 }
 

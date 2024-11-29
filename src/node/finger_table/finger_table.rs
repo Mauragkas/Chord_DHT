@@ -27,7 +27,8 @@ impl FingerTable {
     pub fn new(id: String) -> Self {
         let mut entries = Vec::with_capacity(*M);
         for i in 0..*M {
-            let start = hash(&id) + 2u32.pow(i as u32);
+            // the start might wrap around the ring
+            let start = (hash(&id) + 2u32.pow(i as u32)) % 2u32.pow(*M as u32);
             entries.push(FingerEntry { start, id: None });
         }
         FingerTable { entries }

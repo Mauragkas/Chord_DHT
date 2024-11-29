@@ -8,7 +8,7 @@ mod node;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use chord_server::chrord::*;
 use data_misc::*;
-use node::node::*;
+use node::{helper, node::*};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, thread::sleep, time::Duration};
@@ -50,7 +50,7 @@ async fn main() -> std::io::Result<()> {
         let server_handle = std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                run_server(node_clone).await.unwrap();
+                helper::run_server(node_clone).await.unwrap();
             });
         });
         let node_id = {
@@ -63,7 +63,7 @@ async fn main() -> std::io::Result<()> {
 
     for node_id in node_ids {
         chord_server.req_known_node(node_id).await;
-        sleep(Duration::from_millis(1000));
+        sleep(Duration::from_millis(10));
     }
 
     for handle in server_handles {
