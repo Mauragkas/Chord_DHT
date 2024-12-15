@@ -7,7 +7,7 @@
             rel="stylesheet"
         />
         <link
-            href="https://cdnjs.cloudflare.com/ajax/libs/inter/3.19.3/inter.css"
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
             rel="stylesheet"
         />
         <meta name="color-scheme" content="dark" />
@@ -35,8 +35,11 @@
 
                     // Compare and update logs
                     if (newLogs !== prevLogs) {
-                        document.querySelector("ul.logs").innerHTML = newLogs;
+                        const logsContainer = document.querySelector(".logs");
+                        logsContainer.innerHTML = newLogs;
                         prevLogs = newLogs;
+                        // Scroll to bottom of logs
+                        logsContainer.scrollTop = logsContainer.scrollHeight;
                     }
                 } catch (error) {
                     console.error("Error fetching data:", error);
