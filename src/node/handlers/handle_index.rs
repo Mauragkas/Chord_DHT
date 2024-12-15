@@ -26,7 +26,7 @@ pub async fn handle_index(data: web::Data<Node>) -> impl Responder {
         "{{node_id}}",
         format!("{} [{}]", node_state.id, hash(&node_state.id)).as_str(),
     );
-    html = html.replace("{HOME_URL}", &format!("http://{}:{}", "0.0.0.0", *PORT));
+    html = html.replace("{HOME_URL}", &format!("http://{}:{}", *IP, *PORT));
     html = html.replace(
         "{{predecessor}}",
         format!(

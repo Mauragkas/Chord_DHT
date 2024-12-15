@@ -1,6 +1,6 @@
 use super::*;
 pub async fn handle_message(data: web::Data<Node>, message: web::Json<Message>) -> impl Responder {
-    log_message!(data, "Handling message: {:?}", message.0);
+    // log_message!(data, "Handling message: {:?}", message.0);
 
     match message.0 {
         Message::Ping => {

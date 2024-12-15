@@ -1,7 +1,7 @@
 use super::*;
 use crate::hash::*;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use circula_list::CircularList;
+use circula_buffer::CircularBuffer;
 use msg::Message;
 use std::fs;
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, Mutex};
 // Represents a node in the Chord ring network
 #[derive(Debug, Clone)]
 pub struct ChordRing {
-    nodes: Arc<Mutex<CircularList<String>>>,
+    nodes: Arc<Mutex<CircularBuffer<String>>>,
     size: usize,
     tx: mpsc::Sender<Message>,
     logs: Arc<Mutex<Vec<String>>>,
@@ -32,7 +32,7 @@ impl ChordRingInterface for ChordRing {
         println!("Creating a new ChordRing");
 
         let chord_ring = ChordRing {
-            nodes: Arc::new(Mutex::new(CircularList::new())),
+            nodes: Arc::new(Mutex::new(CircularBuffer::new())),
             size: 2_usize.pow(*M as u32),
             tx,
             logs: Arc::new(Mutex::new(Vec::new())),
@@ -47,6 +47,15 @@ impl ChordRingInterface for ChordRing {
                     Message::ReqKnownNode { node_id } => {
                         log_message!(chord_ring_clone, "Join request from node {}", node_id);
                         chord_ring_clone.handle_known_node_req(node_id).await;
+                    }
+                    Message::ResKnownNode { node_id } => {
+                        log_message!(
+                            chord_ring_clone,
+                            "ResKnownNode message received from node {}",
+                            node_id
+                        );
+                        let mut nodes = chord_ring_clone.nodes.lock().await;
+                        nodes.push_back(node_id);
                     }
                     Message::Leave { node_id } => {
                         log_message!(
@@ -70,7 +79,7 @@ impl ChordRingInterface for ChordRing {
     }
 
     async fn handle_message(&self, msg: Message) -> impl Responder {
-        log_message!(self, "Handling message: {:?}", msg);
+        // log_message!(self, "Handling message: {:?}", msg);
 
         let tx = self.tx.clone();
         if let Err(err) = tx.send(msg).await {
@@ -86,9 +95,12 @@ impl ChordRingInterface for ChordRing {
     }
 
     async fn run(&self) -> std::io::Result<(String, u16)> {
-        let port = *PORT;
-        println!("Running ChordRing server on http://{}:{}", "0.0.0.0", port);
-        log_message!(self, "Running ChordRing server on port: {}", port);
+        println!(
+            "Running ChordRing server on http://{}:{}",
+            IP.clone(),
+            *PORT
+        );
+        log_message!(self, "Running ChordRing server on port: {}", *PORT);
 
         let app_state = AppState {
             logs: self.logs.clone(),
@@ -113,11 +125,11 @@ impl ChordRingInterface for ChordRing {
                     }),
                 )
         })
-        .bind(("0.0.0.0", port))?
+        .bind((IP.clone(), *PORT))?
         .run()
         .await?;
 
-        Ok((String::from("0.0.0.0"), port))
+        Ok((String::from(IP.clone()), *PORT))
     }
 }
 
@@ -141,9 +153,10 @@ impl ChordRing {
 
         let node_to_join = {
             let mut index = self.last_used_index.lock().await;
-            let nodes = self.nodes.lock().await;
+            let mut nodes = self.nodes.lock().await;
 
             if nodes.is_empty() {
+                nodes.push_back(node.clone());
                 node.clone()
             } else {
                 *index = (*index + 1) % nodes.len();
@@ -164,15 +177,6 @@ impl ChordRing {
             node_to_join,
             node
         );
-
-        // Add the new node to the ring
-        self.nodes.lock().await.push_back(node);
-    }
-
-    pub async fn req_known_node(&self, node: String) {
-        log_message!(self, "Requesting known node to join: {}", node);
-
-        let _ = self.handle_known_node_req(node).await;
     }
 }
 
@@ -180,7 +184,7 @@ impl ChordRing {
 #[derive(Clone)]
 struct AppState {
     logs: Arc<Mutex<Vec<String>>>,
-    nodes: Arc<Mutex<CircularList<String>>>,
+    nodes: Arc<Mutex<CircularBuffer<String>>>,
 }
 
 // Handler for the index route

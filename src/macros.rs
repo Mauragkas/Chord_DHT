@@ -1,6 +1,9 @@
 #[macro_export]
 macro_rules! log_message {
     ($app_state:expr, $msg:expr $(, $arg:expr)*) => {
+        #[cfg(debug_assertions)]
+        let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(2 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S%.6f");
+        #[cfg(not(debug_assertions))]
         let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(2 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S");
 
         #[cfg(debug_assertions)]
