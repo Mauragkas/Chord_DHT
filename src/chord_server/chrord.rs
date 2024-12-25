@@ -189,16 +189,22 @@ struct AppState {
 
 // Handler for the index route
 async fn handle_index(state: web::Data<AppState>) -> impl Responder {
-    let nodes_html = state
+    let mut nodes = state
         .nodes
         .lock()
         .await
         .iter()
-        .map(|node| {
+        .map(|node| (node.to_string(), hash(node)))
+        .collect::<Vec<_>>();
+
+    nodes.sort_by_key(|(_node, hash_val)| *hash_val);
+
+    let nodes_html = nodes
+        .into_iter()
+        .map(|(node, hash_val)| {
             format!(
                 "<li><a href=\"http://{0}\">{0} ({1})</a></li>",
-                node,
-                hash(&node)
+                node, hash_val
             )
         })
         .collect::<String>();

@@ -36,12 +36,11 @@ pub async fn handle_index(data: web::Data<Node>) -> impl Responder {
                 .predecessor
                 .as_ref()
                 .unwrap_or(&"None".to_string()),
-            hash(
-                node_state
-                    .predecessor
-                    .as_ref()
-                    .unwrap_or(&"None".to_string())
-            )
+            node_state
+                .predecessor
+                .as_ref()
+                .map(|id| hash(id))
+                .unwrap_or(0)
         )
         .as_str(),
     );
@@ -51,7 +50,11 @@ pub async fn handle_index(data: web::Data<Node>) -> impl Responder {
             // "{} ({})",
             "<a href=\"http://{0}\">{0} [{1}]</a>",
             node_state.successor.as_ref().unwrap_or(&"None".to_string()),
-            hash(node_state.successor.as_ref().unwrap_or(&"None".to_string()))
+            node_state
+                .successor
+                .as_ref()
+                .map(|id| hash(id))
+                .unwrap_or(0)
         )
         .as_str(),
     );
@@ -76,9 +79,10 @@ pub async fn handle_index(data: web::Data<Node>) -> impl Responder {
         .iter()
         .map(|entry| {
             format!(
-                "<li>[{}]: <span class=\"font-semibold\">{}</span></li>",
+                "<li>[{0}]: <span class=\"font-semibold\"><a href=\"http://{1}\">{1}</a> [{2}]</span></li>",
                 entry.start,
-                entry.id.as_ref().unwrap_or(&"None".to_string())
+                entry.id.as_ref().unwrap_or(&"None".to_string()),
+                entry.id.as_ref().map(|id| hash(id)).unwrap_or_default()
             )
         })
         .collect::<Vec<String>>()

@@ -19,6 +19,8 @@ pub enum Message {
     NodeExists,
     Notify { node_id: String },
     Leave { node_id: String },
+    ReqFinger { from: String, index: usize },
+    ResFinger { node_id: String, index: usize },
     Ping,
     Pong,
 }

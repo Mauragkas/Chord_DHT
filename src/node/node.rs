@@ -1,5 +1,6 @@
 use super::*;
 use finger_table::finger_table::FingerTable;
+use tokio::time::interval;
 
 lazy_static::lazy_static! {
     static ref CHORD_RING: Mutex<String> = Mutex::new("".to_string());
@@ -34,17 +35,39 @@ impl Node {
 
         // Spawn a task to handle messages from the channel
         let node_state_clone = node_state.clone();
+        let node_state_clone1 = node_state.clone();
         let app_state_clone = app_state.clone();
+        let app_state_clone1 = app_state.clone();
+        let tx_clone = tx.clone();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let mut interval = interval(std::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                let ns = node_state_clone.lock().await.clone();
+                if ns.successor != Some(ns.id.clone()) {
+                    tx_clone
+                        .send(Message::ReqFinger {
+                            from: ns.id.clone(),
+                            index: ns.finger_table.get_first_entry() as usize,
+                        })
+                        .await
+                        .unwrap();
+                }
+            }
+        });
+
         tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
                 match message {
                     Message::UpdateNodeState { new_state } => {
-                        let mut ns = node_state_clone.lock().await;
+                        let mut ns = node_state_clone1.lock().await;
                         *ns = new_state;
                         log_message!(app_state_clone, "Node state updated");
                     }
                     Message::ResKnownNode { node_id } => {
-                        let mut ns = node_state_clone.lock().await;
+                        let mut ns = node_state_clone1.lock().await;
                         if node_id != ns.id {
                             send_post_request!(
                                 &format!("http://{}/msg", node_id),
@@ -62,7 +85,7 @@ impl Node {
                     Message::Leave { node_id } => {
                         log_message!(app_state_clone, "Node {} left the ring", node_id);
                         // Optionally propagate the leave message
-                        let ns = node_state_clone.lock().await;
+                        let mut ns = node_state_clone1.lock().await;
                         if let Some(ref succ) = ns.successor {
                             if *succ != node_id {
                                 send_post_request!(
@@ -76,7 +99,7 @@ impl Node {
                         // Handle join request
                         log_message!(app_state_clone, "Join request from node {}", node_id);
 
-                        let mut ns = node_state_clone.lock().await;
+                        let mut ns = node_state_clone1.lock().await;
                         let hash_node_id = hash(&ns.id);
                         let hash_successor_id = hash(&ns.successor.as_ref().unwrap());
                         let hash_joining_node = hash(&node_id);
@@ -130,7 +153,7 @@ impl Node {
                     }
                     Message::ResJoin { node_id, sender_id } => {
                         // This becomes more of a fallback or initial contact mechanism
-                        let mut ns = node_state_clone.lock().await;
+                        let mut ns = node_state_clone1.lock().await;
                         ns.successor = Some(node_id.clone());
                         ns.predecessor = Some(sender_id.clone());
 
@@ -147,9 +170,66 @@ impl Node {
                                 node_id: ns.id.clone()
                             }
                         );
+
+                        send_post_request!(
+                            &format!("http://{}/msg", node_id),
+                            Message::ReqFinger {
+                                from: ns.id.clone(),
+                                index: ns.finger_table.get_first_entry() as usize
+                            }
+                        );
+                    }
+                    Message::ReqFinger { from, index } => {
+                        let ns = node_state_clone1.lock().await;
+                        let target_id = ns.id.clone();
+                        let successor_id = ns.successor.as_ref().unwrap().clone();
+
+                        if is_between(hash(&target_id), index as u32, hash(&successor_id)) {
+                            send_post_request!(
+                                &format!("http://{}/msg", from),
+                                Message::ResFinger {
+                                    node_id: successor_id,
+                                    index
+                                }
+                            );
+                        } else {
+                            // Pass request to successor if target not between current node and successor
+                            send_post_request!(
+                                &format!("http://{}/msg", successor_id),
+                                Message::ReqFinger { from, index }
+                            );
+                        }
+                    }
+                    Message::ResFinger { node_id, index } => {
+                        let mut ns = node_state_clone1.lock().await;
+                        if ns
+                            .finger_table
+                            .update_entry(index.try_into().unwrap(), node_id.clone())
+                        {
+                            log_message!(
+                                app_state_clone1,
+                                "Updated finger table entry {} to {}",
+                                index,
+                                node_id
+                            );
+                        }
+
+                        if let Some(next_index) =
+                            ns.finger_table.get_next_entry(index.try_into().unwrap())
+                        {
+                            if next_index != index as u32 {
+                                send_post_request!(
+                                    &format!("http://{}/msg", ns.id.clone()),
+                                    Message::ReqFinger {
+                                        from: ns.id.clone(),
+                                        index: next_index as usize
+                                    }
+                                );
+                            }
+                        }
                     }
                     Message::Notify { node_id } => {
-                        let mut ns = node_state_clone.lock().await;
+                        let mut ns = node_state_clone1.lock().await;
                         let hash_node_id = hash(&ns.id);
                         let hash_predecessor_id = ns
                             .predecessor
@@ -195,14 +275,14 @@ impl Node {
                         log_message!(app_state_clone, "Update predecessor to node {}", node_id);
 
                         // update the predecessor of the current node to be the node_id
-                        let mut ns = node_state_clone.lock().await;
+                        let mut ns = node_state_clone1.lock().await;
                         ns.predecessor = Some(node_id.clone());
                     }
                     Message::IAmYourSuccessor { node_id } => {
                         // Handle successor update
                         log_message!(app_state_clone, "Update successor to node {}", node_id);
 
-                        let mut ns = node_state_clone.lock().await;
+                        let mut ns = node_state_clone1.lock().await;
                         // update the successor of the current node to be the node_id
                         ns.successor = Some(node_id.clone());
                     }
@@ -291,6 +371,7 @@ impl Node {
             // 6. Update node_state's successor and predecessor
             node_state.successor = Some(node_id.clone());
             node_state.predecessor = Some(node_id.clone());
+            node_state.finger_table.clear();
 
             log_message!(self, "Node left the ring");
         } else {

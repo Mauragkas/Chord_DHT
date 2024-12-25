@@ -34,22 +34,48 @@ impl FingerTable {
         FingerTable { entries }
     }
 
-    pub fn update_entry(&mut self, index: usize, id: String) {
-        self.entries[index].id = Some(id);
-    }
-
-    pub fn closest_preceding_finger(&self, id: u32) -> Option<String> {
-        for i in (0..*M).rev() {
-            if let Some(ref entry_id) = self.entries[i].id {
-                if self.entries[i].start < id {
-                    return Some(entry_id.clone());
-                }
-            }
+    pub fn clear(&mut self) {
+        for entry in self.entries.iter_mut() {
+            entry.id = None;
         }
-        None
     }
 
-    pub async fn get_entry(&self, index: usize) -> String {
-        self.entries[index].id.clone().expect("Entry ID is None")
+    pub fn get_first_entry(&self) -> u32 {
+        self.entries[0].start
+    }
+
+    pub fn get_next_entry(&self, index: u32) -> Option<u32> {
+        let current_pos = self.entries.iter().position(|entry| entry.start == index)?;
+        let next_pos = current_pos + 1;
+        if next_pos >= self.entries.len() {
+            None
+        } else {
+            Some(self.entries[next_pos].start)
+        }
+    }
+
+    pub fn update_entry(&mut self, index: u32, id: String) -> bool {
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.start == index) {
+            let changed = entry.id.as_ref() != Some(&id);
+            entry.id = Some(id);
+            changed
+        } else {
+            false
+        }
+    }
+
+    pub async fn get_entry(&self, index: u32) -> String {
+        self.entries
+            .iter()
+            .find(|entry| entry.start == index)
+            .and_then(|entry| entry.id.clone())
+            .expect("Entry ID is None")
+    }
+
+    pub fn get_first_empty_entry(&self) -> Option<u32> {
+        self.entries
+            .iter()
+            .find(|entry| entry.id.is_none())
+            .map(|entry| entry.start)
     }
 }
