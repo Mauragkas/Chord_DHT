@@ -26,7 +26,6 @@ lazy_static::lazy_static! {
         }
     };
     static ref DEFAULT_CHANNEL_SIZE: usize = dotenv::var("DEFAULT_CHANNEL_SIZE").unwrap().parse().unwrap();
-    static ref NUM_OF_NODES: usize = dotenv::var("NUM_OF_NODES").unwrap().parse().unwrap();
 }
 
 fn get_tailscale_ip() -> std::io::Result<String> {
@@ -53,53 +52,60 @@ fn get_tailscale_ip() -> std::io::Result<String> {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let chord_server = Arc::new(ChordRing::new());
-    let chord_server_clone = Arc::clone(&chord_server);
+    let args: Vec<String> = std::env::args().collect();
 
-    let handle = std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            let _result: (String, u16) = chord_server_clone.run().await.unwrap();
-        });
-    });
+    match args.get(2).map(|s| s.as_str()) {
+        Some("chord") => {
+            let chord_server = Arc::new(ChordRing::new());
+            let chord_server_clone = Arc::clone(&chord_server);
 
-    let mut server_handles = vec![];
-    let mut nodes = vec![];
-
-    for i in 1..=*NUM_OF_NODES {
-        let port = *PORT + i as u16;
-        let node = Node::new(Some(port));
-        let node_clone = node.clone();
-        let server_handle = std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                helper::run_server(node_clone).await.unwrap();
+            let handle = std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    let _result: (String, u16) = chord_server_clone.run().await.unwrap();
+                });
             });
-        });
-        nodes.push(node);
-        server_handles.push(server_handle);
-    }
 
-    for node in nodes {
-        let mut retries = 5;
-        while retries > 0 {
-            match node.req_known_node(format!("{}:{}", *IP, *PORT)).await {
-                Ok(()) => break,
-                Err(_) => {
-                    retries -= 1;
-                    if retries > 0 {
-                        std::thread::sleep(std::time::Duration::from_secs(1));
+            handle.join().unwrap();
+        }
+        Some("node") => {
+            let node_port = args[3].parse::<u16>().unwrap_or(*PORT);
+            let node = Node::new(Some(node_port));
+            let node_clone = node.clone();
+
+            let server_handle = std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    helper::run_server(node_clone).await.unwrap();
+                    // println!("Starting node {}:{}", *IP, node_port);
+                });
+            });
+
+            let mut retries = 5;
+            while retries > 0 {
+                // match node.req_known_node(format!("{}:{}", *IP, *PORT)).await {
+                match node.req_known_node(format!("{}:{}", args[4], *PORT)).await {
+                    Ok(()) => break,
+                    Err(_) => {
+                        retries -= 1;
+                        if retries > 0 {
+                            log_message!(node, "Retrying to connect to known node");
+                            std::thread::sleep(std::time::Duration::from_secs(1));
+                        } else {
+                            println!("Failed to connect to known node");
+                            std::process::exit(1);
+                        }
                     }
                 }
             }
-        }
-        // std::thread::sleep(std::time::Duration::from_millis(100));
-    }
 
-    for handle in server_handles {
-        handle.join().unwrap();
+            server_handle.join().unwrap();
+        }
+        _ => {
+            println!("Please specify either 'chord' or 'node' as the second argument");
+            std::process::exit(1);
+        }
     }
-    handle.join().unwrap();
 
     Ok(())
 }
