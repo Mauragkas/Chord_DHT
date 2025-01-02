@@ -20,17 +20,27 @@
             async function insertData() {
                 const key = document.getElementById("keyInput").value;
                 const value = document.getElementById("valueInput").value;
+                const dataToInsert = [
+                    {
+                        key: key,
+                        value: value,
+                    },
+                ];
                 try {
                     const response = await fetch("/insert", {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
                         },
-                        body: JSON.stringify({ key, value }),
+                        body: JSON.stringify(dataToInsert), // Send as array
                     });
                     if (response.ok) {
                         document.getElementById("keyInput").value = "";
                         document.getElementById("valueInput").value = "";
+                        // Optionally show success message
+                        console.log("Data inserted successfully");
+                    } else {
+                        console.error("Failed to insert data");
                     }
                 } catch (error) {
                     console.error("Error inserting data:", error);
@@ -109,6 +119,34 @@
             document.addEventListener("DOMContentLoaded", () => {
                 setInterval(fetchData, 100);
             });
+
+            async function kys() {
+                const message = { Kys: null }; // or try other formats
+                console.log("Sending message:", JSON.stringify(message));
+
+                try {
+                    const response = await fetch("/msg", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(message),
+                    });
+
+                    console.log("Response status:", response.status);
+                    if (response.ok) {
+                        const responseData = await response.json();
+                        console.log("Response data:", responseData);
+                        console.log("Successfully sent KYS message");
+                    } else {
+                        console.error("Failed to send KYS message");
+                        const text = await response.text();
+                        console.error("Error response:", text);
+                    }
+                } catch (error) {
+                    console.error("Error sending KYS message:", error);
+                }
+            }
         </script>
         <style>
             :root {
@@ -121,6 +159,7 @@
                 --ayu-purple: #d2a6ff;
                 --ayu-yellow: #ffb454;
                 --ayu-border: #1d222d;
+                --ayu-red: #ff3333;
             }
             body {
                 font-family: "FreeSans", sans-serif;
@@ -170,6 +209,10 @@
                 100% {
                     transform: rotate(360deg);
                 }
+            }
+            a:hover {
+                color: var(--ayu-blue);
+                transition: color 0.2s ease;
             }
         </style>
     </head>
@@ -285,7 +328,7 @@
                 </div>
 
                 <!-- Insert Data Section -->
-                <div class="col-span-12 card rounded-lg shadow-lg p-6">
+                <!-- <div class="col-span-12 card rounded-lg shadow-lg p-6">
                     <div class="flex items-center mb-4">
                         <h2
                             class="text-xl font-semibold"
@@ -323,7 +366,7 @@
                             </button>
                         </div>
                     </div>
-                </div>
+                </div> -->
 
                 <!-- Data Section -->
                 <div class="col-span-12 card rounded-lg shadow-lg p-6">
@@ -363,9 +406,9 @@
                     >
                         <button
                             onclick="joinRing()"
-                            class="px-6 py-2 rounded-lg"
+                            class="px-6 py-2 rounded-lg mr-4"
                             style="
-                                background-color: var(--ayu-orange);
+                                background-color: var(--ayu-green);
                                 color: var(--ayu-bg);
                             "
                         >
@@ -373,13 +416,23 @@
                         </button>
                         <button
                             onclick="leaveRing()"
-                            class="px-6 py-2 rounded-lg"
+                            class="px-6 py-2 rounded-lg mr-4"
                             style="
                                 background-color: var(--ayu-orange);
                                 color: var(--ayu-bg);
                             "
                         >
                             Leave Ring
+                        </button>
+                        <button
+                            onclick="kys()"
+                            class="px-6 py-2 rounded-lg"
+                            style="
+                                background-color: var(--ayu-red);
+                                color: var(--ayu-bg);
+                            "
+                        >
+                            KYS
                         </button>
                     </div>
                 </div>

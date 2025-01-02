@@ -12,43 +12,125 @@
         />
         <meta name="color-scheme" content="dark" />
         <script>
-            // Initialize variables to store previous data
-            let prevNodes = "";
-            let prevLogs = "";
+            let currentData = {
+                nodes: [],
+                logs: [],
+                node_count: 0,
+                log_count: 0,
+            };
+
+            let cachedNodesHTML = "";
+            let cachedLogsHTML = "";
 
             async function fetchData() {
                 try {
-                    const response = await fetch("/");
-                    const html = await response.text();
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(html, "text/html");
+                    const response = await fetch("/data");
+                    const newData = await response.json();
 
-                    // Extract new data
-                    const newNodes = doc.querySelector("ul.nodes").innerHTML;
-                    const newLogs = doc.querySelector("ul.logs").innerHTML;
-
-                    // Compare and update nodes
-                    if (newNodes !== prevNodes) {
-                        document.querySelector("ul.nodes").innerHTML = newNodes;
-                        prevNodes = newNodes;
-                    }
-
-                    // Compare and update logs
-                    if (newLogs !== prevLogs) {
-                        const logsContainer = document.querySelector(".logs");
-                        logsContainer.innerHTML = newLogs;
-                        prevLogs = newLogs;
-                        // Scroll to bottom of logs
-                        logsContainer.scrollTop = logsContainer.scrollHeight;
+                    // Only update if data has actually changed
+                    if (
+                        JSON.stringify(newData) !== JSON.stringify(currentData)
+                    ) {
+                        updateUI(newData);
+                        currentData = newData;
                     }
                 } catch (error) {
                     console.error("Error fetching data:", error);
                 }
             }
 
+            function updateUI(data) {
+                // Update counts if changed
+                if (data.node_count !== currentData.node_count) {
+                    document.getElementById("node-count").textContent =
+                        `(${data.node_count})`;
+                }
+                if (data.log_count !== currentData.log_count) {
+                    document.getElementById("log-count").textContent =
+                        `(${data.log_count})`;
+                }
+
+                // Update nodes list if nodes changed
+                const newNodesHTML = data.nodes
+                    .sort((a, b) => a.hash - b.hash)
+                    .map(
+                        (node) =>
+                            `<li>
+                              <span class=\"font-semibold\">
+                                <a href="http://${node.id}">${node.id} [${node.hash}]</a>
+                              </span>
+                            </li>`,
+                    )
+                    .join("");
+
+                if (newNodesHTML !== cachedNodesHTML) {
+                    document.querySelector("ul.nodes").innerHTML = newNodesHTML;
+                    cachedNodesHTML = newNodesHTML;
+                }
+
+                // Update logs if changed
+                const newLogsHTML = data.logs
+                    .map((log) => `<li>${log}</li>`)
+                    .join("");
+
+                if (newLogsHTML !== cachedLogsHTML) {
+                    const logsContainer = document.querySelector("ul.logs");
+                    logsContainer.innerHTML = newLogsHTML;
+                    logsContainer.scrollTop = logsContainer.scrollHeight;
+                    cachedLogsHTML = newLogsHTML;
+                }
+            }
+
+            async function lookupKey() {
+                const key = document.getElementById("lookup-key").value;
+                const resultElement = document.getElementById("lookup-result");
+
+                try {
+                    const response = await fetch("/lookup", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ key }),
+                    });
+
+                    const result = await response.json();
+
+                    if (result.status === "success") {
+                        resultElement.innerHTML = `<span style="color: var(--ayu-green)">${result.message}</span>`;
+                    } else {
+                        resultElement.innerHTML = `<span style="color: var(--ayu-orange)">Error: ${result.message}</span>`;
+                    }
+                } catch (error) {
+                    resultElement.innerHTML = `<span style="color: var(--ayu-orange)">Error: ${error.message}</span>`;
+                }
+            }
+
             document.addEventListener("DOMContentLoaded", () => {
                 // Poll every 1 second (adjust as needed)
                 setInterval(fetchData, 100);
+
+                document
+                    .getElementById("upload-form")
+                    .addEventListener("submit", async (e) => {
+                        e.preventDefault();
+                        const formData = new FormData();
+                        const fileInput = document.getElementById("file-input");
+                        formData.append("file", fileInput.files[0]);
+
+                        try {
+                            const response = await fetch("/upload", {
+                                method: "POST",
+                                body: formData,
+                            });
+                            const result = await response.json();
+                            document.getElementById("upload-result").innerHTML =
+                                `Upload success: ${JSON.stringify(result)}`;
+                        } catch (error) {
+                            document.getElementById("upload-result").innerHTML =
+                                `Upload error: ${error.message}`;
+                        }
+                    });
             });
         </script>
         <style>
@@ -113,6 +195,10 @@
                     transform: rotate(360deg);
                 }
             }
+            a:hover {
+                color: var(--ayu-blue);
+                transition: color 0.2s ease;
+            }
         </style>
     </head>
     <body>
@@ -157,6 +243,12 @@
                             style="color: var(--ayu-yellow)"
                         >
                             Active Nodes
+                            <span
+                                id="node-count"
+                                class="text-sm font-normal"
+                                style="color: var(--ayu-blue)"
+                                >(0)</span
+                            >
                         </h2>
                         <span
                             class="ml-3 px-2.5 py-0.5 rounded-full text-sm font-medium badge-live"
@@ -169,9 +261,7 @@
                     >
                         <ul
                             class="list-none p-0 space-y-2 nodes logs-container text-center"
-                        >
-                            {nodes}
-                        </ul>
+                        ></ul>
                     </div>
                 </div>
 
@@ -183,6 +273,12 @@
                             style="color: var(--ayu-yellow)"
                         >
                             System Logs
+                            <span
+                                id="log-count"
+                                class="text-sm font-normal"
+                                style="color: var(--ayu-blue)"
+                                >(0)</span
+                            >
                         </h2>
                         <span
                             class="ml-3 px-2.5 py-0.5 rounded-full text-sm font-medium badge-realtime"
@@ -193,9 +289,97 @@
                         class="content-bg rounded-lg p-4 border border-opacity-10"
                         style="border-color: var(--ayu-border)"
                     >
-                        <ul class="list-none p-0 space-y-2 logs logs-container">
-                            {logs}
-                        </ul>
+                        <ul
+                            class="list-none p-0 space-y-2 logs logs-container"
+                        ></ul>
+                    </div>
+                </div>
+            </div>
+            <div class="grid grid-cols-12 gap-8 mt-8">
+                <!-- Search Box -->
+                <div
+                    class="col-span-6 card rounded-lg shadow-lg p-3 flex items-center"
+                >
+                    <div class="w-full">
+                        <div class="flex space-x-4 items-center">
+                            <h2
+                                class="text-xl font-semibold"
+                                style="color: var(--ayu-yellow)"
+                            >
+                                Lookup Key
+                            </h2>
+                            <form
+                                onsubmit="event.preventDefault(); lookupKey();"
+                                class="flex flex-1 space-x-4"
+                            >
+                                <input
+                                    type="text"
+                                    id="lookup-key"
+                                    class="flex-1 px-4 py-2 rounded-lg bg-opacity-10 border border-opacity-10"
+                                    style="
+                                        background: var(--ayu-bg);
+                                        border-color: var(--ayu-border);
+                                    "
+                                    placeholder="Enter key to lookup..."
+                                />
+                                <button
+                                    type="submit"
+                                    class="px-4 py-2 rounded-lg"
+                                    style="
+                                        background: var(--ayu-orange);
+                                        color: var(--ayu-bg);
+                                    "
+                                >
+                                    Lookup
+                                </button>
+                            </form>
+                        </div>
+                        <div id="lookup-result" class="text-sm"></div>
+                    </div>
+                </div>
+
+                <!-- File Upload -->
+                <div
+                    class="col-span-6 card rounded-lg shadow-lg p-3 flex items-center"
+                >
+                    <div class="w-full">
+                        <div class="flex space-x-4 items-center">
+                            <h2
+                                class="text-xl font-semibold"
+                                style="color: var(--ayu-yellow)"
+                            >
+                                Upload File
+                            </h2>
+                            <form
+                                id="upload-form"
+                                enctype="multipart/form-data"
+                                class="flex-1"
+                            >
+                                <div class="flex space-x-4">
+                                    <input
+                                        type="file"
+                                        id="file-input"
+                                        accept=".csv"
+                                        class="flex-1 px-4 py-2 rounded-lg bg-opacity-10 border border-opacity-10"
+                                        style="
+                                            background: var(--ayu-bg);
+                                            border-color: var(--ayu-border);
+                                        "
+                                    />
+                                    <button
+                                        type="submit"
+                                        class="px-4 py-2 rounded-lg"
+                                        style="
+                                            background: var(--ayu-green);
+                                            color: var(--ayu-bg);
+                                        "
+                                    >
+                                        Upload
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                        <div id="upload-result" class="text-sm"></div>
                     </div>
                 </div>
             </div>
