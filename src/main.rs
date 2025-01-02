@@ -6,7 +6,7 @@ mod macros;
 mod node;
 
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use chord_server::chrord::*;
+use chord_server::chord::*;
 use data_misc::*;
 use node::{helper, node::*};
 use rusqlite::{params, Connection};
