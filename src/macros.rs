@@ -1,10 +1,20 @@
 #[macro_export]
 macro_rules! log_message {
-    ($app_state:expr, $msg:expr $(, $arg:expr)*) => {
-        #[cfg(debug_assertions)]
-        let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(2 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S%.6f");
-        #[cfg(not(debug_assertions))]
-        let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(2 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S");
+    ($app_state:expr, $msg:expr $(, $arg:expr)*) => {{
+        let now = {
+            #[cfg(debug_assertions)]
+            {
+                chrono::Utc::now()
+                    .with_timezone(&chrono::FixedOffset::east_opt(2 * 3600).unwrap())
+                    .format("%Y-%m-%d %H:%M:%S%.6f")
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                chrono::Utc::now()
+                    .with_timezone(&chrono::FixedOffset::east_opt(2 * 3600).unwrap())
+                    .format("%Y-%m-%d %H:%M:%S")
+            }
+        };
 
         #[cfg(debug_assertions)]
         println!("[{}] {}", now, format!($msg $(, $arg)*));
@@ -13,8 +23,8 @@ macro_rules! log_message {
             "[{}] <span class=\"font-semibold\">{}</span>",
             now,
             format!($msg $(, $arg)*)
-        ));
-    };
+        ))
+    }};
 }
 
 #[macro_export]
@@ -26,6 +36,5 @@ macro_rules! send_post_request {
             .body(serde_json::to_string(&$message).unwrap())
             .send()
             .await
-            .unwrap()
     };
 }
