@@ -1,9 +1,10 @@
 use super::*;
 use finger_table::finger_table::FingerTable;
+use message_handlers::known_node;
 use tokio::time::interval;
 
 lazy_static::lazy_static! {
-    static ref CHORD_RING: Mutex<String> = Mutex::new("".to_string());
+    pub static ref CHORD_RING: Mutex<String> = Mutex::new("".to_string());
 }
 
 #[derive(Debug)]
@@ -35,11 +36,10 @@ impl Node {
 
         // Spawn a task to handle messages from the channel
         let node_state_clone = node_state.clone();
-        let node_state_clone1 = node_state.clone();
         let app_state_clone = app_state.clone();
-        let app_state_clone1 = app_state.clone();
         let tx_clone = tx.clone();
 
+        // update fingers periodically
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             let mut interval = interval(std::time::Duration::from_secs(5));
@@ -47,255 +47,113 @@ impl Node {
                 interval.tick().await;
                 let ns = node_state_clone.lock().await.clone();
                 if ns.successor != Some(ns.id.clone()) {
-                    tx_clone
+                    let _ = tx_clone
                         .send(Message::ReqFinger {
                             from: ns.id.clone(),
                             index: ns.finger_table.get_first_entry() as usize,
                         })
-                        .await
-                        .unwrap();
+                        .await;
                 }
             }
         });
 
+        let node_state_clone = node_state.clone();
+        let tx_clone = tx.clone();
         tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
                 match message {
-                    Message::UpdateNodeState { new_state } => {
-                        let mut ns = node_state_clone1.lock().await;
-                        *ns = new_state;
-                        log_message!(app_state_clone, "Node state updated");
-                    }
                     Message::ResKnownNode { node_id } => {
-                        let mut ns = node_state_clone1.lock().await;
-                        if node_id != ns.id {
-                            send_post_request!(
-                                &format!("http://{}/msg", node_id),
-                                Message::ReqJoin {
-                                    node_id: ns.id.clone()
-                                }
-                            );
-                        } else {
-                            log_message!(
-                                app_state_clone,
-                                "Node is currently the only node in the ring"
-                            );
-                        }
+                        let mut ns = node_state_clone.lock().await;
+                        known_node_handler(
+                            &mut ns,
+                            node_id,
+                            app_state_clone.clone(),
+                            CHORD_RING.lock().await.clone(),
+                        )
+                        .await
+                        .unwrap();
                     }
                     Message::Leave { node_id } => {
-                        log_message!(app_state_clone, "Node {} left the ring", node_id);
-                        // Optionally propagate the leave message
-                        let mut ns = node_state_clone1.lock().await;
-                        if let Some(ref succ) = ns.successor {
-                            if *succ != node_id {
-                                send_post_request!(
-                                    &format!("http://{}/msg", succ),
-                                    Message::Leave { node_id }
-                                );
-                            }
-                        }
+                        let mut ns = node_state_clone.lock().await;
+                        leave_handler(&mut ns, node_id, app_state_clone.clone())
+                            .await
+                            .unwrap();
                     }
                     Message::ReqJoin { node_id } => {
-                        // Handle join request
-                        log_message!(app_state_clone, "Join request from node {}", node_id);
-
-                        let mut ns = node_state_clone1.lock().await;
-                        let hash_node_id = hash(&ns.id);
-                        let hash_successor_id = hash(&ns.successor.as_ref().unwrap());
-                        let hash_joining_node = hash(&node_id);
-
-                        // Check for hash collision
-                        if hash_node_id == hash_joining_node
-                            || hash_successor_id == hash_joining_node
-                        {
-                            log_message!(
-                                app_state_clone,
-                                "Node {} cannot join: hash collision detected",
-                                node_id
-                            );
-                            send_post_request!(
-                                &format!("http://{}/msg", node_id),
-                                Message::NodeExists
-                            );
-                        } else {
-                            // Determine the appropriate successor for the joining node
-                            if is_between(hash_node_id, hash_joining_node, hash_successor_id) {
-                                // The joining node's hash falls between the current node and its successor
-                                let old_successor = ns.successor.clone();
-                                ns.successor = Some(node_id.clone());
-
-                                // Notify the joining node of its successor
-                                send_post_request!(
-                                    &format!("http://{}/msg", node_id),
-                                    Message::ResJoin {
-                                        node_id: old_successor.clone().unwrap(),
-                                        sender_id: ns.id.clone()
-                                    }
-                                );
-
-                                // Notify the old successor for its new predecessor
-                                send_post_request!(
-                                    &format!("http://{}/msg", old_successor.unwrap()),
-                                    Message::Notify {
-                                        node_id: node_id.clone()
-                                    }
-                                );
-                            } else {
-                                // Forward the join request to the successor
-                                send_post_request!(
-                                    &format!("http://{}/msg", ns.successor.as_ref().unwrap()),
-                                    Message::ReqJoin {
-                                        node_id: node_id.clone()
-                                    }
-                                );
-                            }
-                        }
+                        let mut ns = node_state_clone.lock().await;
+                        req_join_handler(&mut ns, node_id, app_state_clone.clone())
+                            .await
+                            .unwrap();
                     }
                     Message::ResJoin { node_id, sender_id } => {
-                        // This becomes more of a fallback or initial contact mechanism
-                        let mut ns = node_state_clone1.lock().await;
-                        ns.successor = Some(node_id.clone());
-                        ns.predecessor = Some(sender_id.clone());
-
-                        log_message!(
-                            app_state_clone,
-                            "Updated successor to {} and predecessor to {}",
+                        let mut ns = node_state_clone.lock().await;
+                        res_join_handler(
+                            &mut ns,
                             node_id,
-                            sender_id
-                        );
-
-                        send_post_request!(
-                            &format!("http://{}/msg", CHORD_RING.lock().await.clone()),
-                            Message::ResKnownNode {
-                                node_id: ns.id.clone()
-                            }
-                        );
-
-                        send_post_request!(
-                            &format!("http://{}/msg", node_id),
-                            Message::ReqFinger {
-                                from: ns.id.clone(),
-                                index: ns.finger_table.get_first_entry() as usize
-                            }
-                        );
+                            sender_id,
+                            app_state_clone.clone(),
+                            CHORD_RING.lock().await.clone(),
+                        )
+                        .await
+                        .unwrap();
+                    }
+                    Message::LookupReq { key, hops } => {
+                        let ns = node_state_clone.lock().await;
+                        lookup_req_handler(
+                            &ns,
+                            app_state_clone.clone(),
+                            key,
+                            hops,
+                            CHORD_RING.lock().await.clone(),
+                        )
+                        .await
+                        .unwrap();
                     }
                     Message::ReqFinger { from, index } => {
-                        let ns = node_state_clone1.lock().await;
-                        let target_id = ns.id.clone();
-                        let successor_id = ns.successor.as_ref().unwrap().clone();
-
-                        if is_between(hash(&target_id), index as u32, hash(&successor_id)) {
-                            send_post_request!(
-                                &format!("http://{}/msg", from),
-                                Message::ResFinger {
-                                    node_id: successor_id,
-                                    index
-                                }
-                            );
-                        } else {
-                            // Pass request to successor if target not between current node and successor
-                            send_post_request!(
-                                &format!("http://{}/msg", successor_id),
-                                Message::ReqFinger { from, index }
-                            );
-                        }
+                        let ns = node_state_clone.lock().await;
+                        finger_req_handler(&ns, from, index, app_state_clone.clone())
+                            .await
+                            .unwrap();
                     }
                     Message::ResFinger { node_id, index } => {
-                        let mut ns = node_state_clone1.lock().await;
-                        if ns
-                            .finger_table
-                            .update_entry(index.try_into().unwrap(), node_id.clone())
-                        {
-                            log_message!(
-                                app_state_clone1,
-                                "Updated finger table entry {} to {}",
-                                index,
-                                node_id
-                            );
-                        }
-
-                        if let Some(next_index) =
-                            ns.finger_table.get_next_entry(index.try_into().unwrap())
-                        {
-                            if next_index != index as u32 {
-                                send_post_request!(
-                                    &format!("http://{}/msg", ns.id.clone()),
-                                    Message::ReqFinger {
-                                        from: ns.id.clone(),
-                                        index: next_index as usize
-                                    }
-                                );
-                            }
-                        }
+                        let mut ns = node_state_clone.lock().await;
+                        finger_res_handler(&mut ns, node_id, index, app_state_clone.clone())
+                            .await
+                            .unwrap();
                     }
                     Message::Notify { node_id } => {
-                        let mut ns = node_state_clone1.lock().await;
-                        let hash_node_id = hash(&ns.id);
-                        let hash_predecessor_id = ns
-                            .predecessor
-                            .as_ref()
-                            .map(|id| hash(id))
-                            .unwrap_or(hash_node_id);
-                        let hash_sender = hash(&node_id);
-
-                        if is_between(hash_predecessor_id, hash_sender, hash_node_id) {
-                            ns.predecessor = Some(node_id.clone());
-                            log_message!(app_state_clone, "Updated predecessor to {}", node_id);
-
-                            // Transfer only the data that should belong to the new predecessor
-                            let data_to_transfer = app_state_clone
-                                // .select_data(Some(hash_sender))
-                                .select_data(Some(hash_predecessor_id), Some(hash_sender))
-                                .await
-                                .unwrap();
-
-                            // Send the filtered data to the new predecessor
-                            log_message!(app_state_clone, "Transfer data to node {}", node_id);
-                            send_post_request!(
-                                &format!("http://{}/msg", node_id),
-                                Message::Data {
-                                    from: ns.id.clone(),
-                                    data: data_to_transfer
-                                }
-                            );
-
-                            // Remove transferred data from current node
-                            log_message!(app_state_clone, "Remove data from node");
-                            app_state_clone
-                                // .remove_data(Some(hash_sender))
-                                .remove_data(Some(hash_predecessor_id), Some(hash_sender))
-                                .await
-                                .unwrap();
-                        } else {
-                            log_message!(app_state_clone, "Did not update predecessor");
-                        }
+                        let mut ns = node_state_clone.lock().await;
+                        notify_handler(&mut ns, node_id, app_state_clone.clone())
+                            .await
+                            .unwrap();
                     }
                     Message::IAmYourPredecessor { node_id } => {
-                        // Handle predecessor update
                         log_message!(app_state_clone, "Update predecessor to node {}", node_id);
-
-                        // update the predecessor of the current node to be the node_id
-                        let mut ns = node_state_clone1.lock().await;
+                        let mut ns = node_state_clone.lock().await;
                         ns.predecessor = Some(node_id.clone());
                     }
                     Message::IAmYourSuccessor { node_id } => {
-                        // Handle successor update
                         log_message!(app_state_clone, "Update successor to node {}", node_id);
-
-                        let mut ns = node_state_clone1.lock().await;
-                        // update the successor of the current node to be the node_id
+                        let mut ns = node_state_clone.lock().await;
                         ns.successor = Some(node_id.clone());
                     }
                     Message::Data { from, data } => {
-                        // Handle data transfer
                         log_message!(app_state_clone, "Transfer data to node {}", from);
-                        // Insert the data into the current node
-                        app_state_clone.insert_data(data).await;
+                        app_state_clone.insert_batch_data(data).await;
                     }
                     Message::NodeExists => {
                         log_message!(app_state_clone, "Node already exists in the ring");
+                        // println!("Node hash collision detected - exiting");
+                        std::process::exit(1);
                     }
-                    _ => (),
+                    Message::Kys => {
+                        log_message!(app_state_clone, "Received KYS message");
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        std::process::exit(1);
+                    }
+                    _ => {
+                        log_message!(app_state_clone, "Something unexpected was sent");
+                    }
                 }
             }
         });
@@ -311,7 +169,7 @@ impl Node {
             Message::ReqKnownNode {
                 node_id: self.node_state.lock().await.id.clone()
             }
-        );
+        )?;
 
         if res.status().is_success() {
             Ok(())
@@ -379,6 +237,24 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    pub async fn select_specific_data(&self, key: String) -> Result<Vec<Data>, rusqlite::Error> {
+        let conn = self.db.lock().await;
+        let mut stmt = conn.prepare("SELECT key, value FROM data WHERE key = ?")?;
+        let data_iter = stmt.query_map(params![key], |row| {
+            Ok(Data {
+                key: row.get(0)?,
+                value: row.get(1)?,
+            })
+        })?;
+
+        let mut data = Vec::new();
+        for d in data_iter {
+            data.push(d?);
+        }
+
+        Ok(data)
     }
 
     // major bug fix
@@ -449,7 +325,7 @@ impl Node {
 
         Ok(())
     }
-    pub async fn insert_data(&self, data: Vec<Data>) -> Result<(), rusqlite::Error> {
+    pub async fn insert_batch_data(&self, data: Vec<Data>) -> Result<(), rusqlite::Error> {
         let conn = self.db.lock().await;
         let mut stmt = conn.prepare("INSERT INTO data (key, value, hash) VALUES (?, ?, ?)")?;
         for d in data {
