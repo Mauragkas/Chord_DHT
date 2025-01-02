@@ -70,7 +70,7 @@ impl<T> CircularBuffer<T> {
             let item = self.items.remove(&self.head);
             self.len -= 1;
             if !self.is_empty() {
-                self.head = (self.head + 1) % (self.len + 1);
+                self.head = (self.head + 1) % (self.len + 2);
             }
             item
         }
@@ -109,9 +109,9 @@ impl<T> CircularBuffer<T> {
         let head = self.head;
         let items = &self.items;
 
-        (0..len).map(move |i| {
+        (0..len).filter_map(move |i| {
             let actual_index = (head + i) % (len + 1);
-            items.get(&actual_index).unwrap()
+            items.get(&actual_index)
         })
     }
 
@@ -147,6 +147,21 @@ impl<T> CircularBuffer<T> {
                 };
             }
             item
+        }
+    }
+
+    pub fn rotate(&mut self) {
+        if self.len <= 1 {
+            return;
+        }
+
+        if let Some(first) = self.items.remove(&self.head) {
+            let new_head = (self.head + 1) % (self.len + 1);
+            let new_tail = (self.tail + 1) % (self.len + 1);
+
+            self.items.insert(new_tail, first);
+            self.head = new_head;
+            self.tail = new_tail;
         }
     }
 }
