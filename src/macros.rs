@@ -30,11 +30,38 @@ macro_rules! log_message {
 #[macro_export]
 macro_rules! send_post_request {
     ($url:expr, $message:expr) => {
-        reqwest::Client::new()
-            .post($url)
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&$message).unwrap())
-            .send()
-            .await
+        send_post_request!($url, $message, 3) // Default to 3 retries
     };
+    ($url:expr, $message:expr, $max_retries:expr) => {{
+        let client = reqwest::Client::new();
+        let json_body = serde_json::to_string(&$message).unwrap();
+        let mut attempts = 0;
+        let result = loop {
+            match client
+                .post($url)
+                .header("Content-Type", "application/json")
+                .body(json_body.clone())
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    break Ok(response);
+                }
+                Err(e) => {
+                    attempts += 1;
+                    if attempts < $max_retries {
+                        // Exponential backoff: wait 2^attempts * 100ms
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            100 * (2_u64.pow(attempts as u32)),
+                        ))
+                        .await;
+                        continue;
+                    } else {
+                        break Err(e);
+                    }
+                }
+            }
+        };
+        result
+    }};
 }
