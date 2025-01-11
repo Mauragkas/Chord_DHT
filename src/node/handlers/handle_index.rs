@@ -51,14 +51,27 @@ pub async fn handle_index(data: web::Data<Node>) -> impl Responder {
     html = html.replace(
         "{{successor}}",
         format!(
-            // "{} ({})",
-            "<a href=\"http://{0}\">{0} [{1}]</a>",
-            node_state.successor.as_ref().unwrap_or(&"None".to_string()),
+            "{}",
             node_state
                 .successor
-                .as_ref()
-                .map(|id| hash(id))
-                .unwrap_or(0)
+                .entries
+                .iter()
+                .enumerate()
+                .map(|(i, entry)| {
+                    if let Some(id) = entry {
+                        format!(
+                            "<li>[{i}]: <span class=\"font-semibold\"><a href=\"http://{0}\">{0} [{1}]</a></span></li>",
+                            id,
+                            hash(id)
+                        )
+                    } else {
+                        format!(
+                            "<li>[{i}]: <span class=\"font-semibold\">None [0]</span></li>"
+                        )
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join("")
         )
         .as_str(),
     );
@@ -82,12 +95,19 @@ pub async fn handle_index(data: web::Data<Node>) -> impl Responder {
         .entries
         .iter()
         .map(|entry| {
-            format!(
-                "<li>[{0}]: <span class=\"font-semibold\"><a href=\"http://{1}\">{1}</a> [{2}]</span></li>",
-                entry.start,
-                entry.id.as_ref().unwrap_or(&"None".to_string()),
-                entry.id.as_ref().map(|id| hash(id)).unwrap_or_default()
-            )
+            if let Some(id) = &entry.id {
+                format!(
+                    "<li>[{0}]: <span class=\"font-semibold\"><a href=\"http://{1}\">{1}</a> [{2}]</span></li>",
+                    entry.start,
+                    id,
+                    hash(id)
+                )
+            } else {
+                format!(
+                    "<li>[{0}]: <span class=\"font-semibold\">None [0]</span></li>",
+                    entry.start
+                )
+            }
         })
         .collect::<Vec<String>>()
         .join("");
