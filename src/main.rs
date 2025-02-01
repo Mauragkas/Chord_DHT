@@ -16,6 +16,7 @@ use tokio::sync::{mpsc, Mutex};
 
 lazy_static::lazy_static! {
     static ref M: usize = dotenv::var("M").unwrap().parse().unwrap();
+    static ref N: usize = dotenv::var("N").unwrap().parse().unwrap();
     static ref IP: String = get_tailscale_ip().unwrap_or_else(|_| String::from("0.0.0.0"));
     static ref PORT: u16 = {
         let args: Vec<String> = std::env::args().collect();

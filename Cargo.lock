@@ -404,6 +404,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "chord_dht"
+version = "0.1.0"
+dependencies = [
+ "actix-multipart",
+ "actix-web",
+ "chrono",
+ "dotenv",
+ "futures",
+ "lazy_static",
+ "log",
+ "rand",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1244,26 +1264,6 @@ name = "log"
 version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
-
-[[package]]
-name = "main"
-version = "0.1.0"
-dependencies = [
- "actix-multipart",
- "actix-web",
- "chrono",
- "dotenv",
- "futures",
- "lazy_static",
- "log",
- "rand",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
-]
 
 [[package]]
 name = "memchr"

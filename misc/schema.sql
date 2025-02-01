@@ -1,6 +1,5 @@
 CREATE TABLE data (
     hash INTEGER,
-    key TEXT,
+    key TEXT PRIMARY KEY,
     value TEXT
-    -- primary key (hash, key, value)
 )

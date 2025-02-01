@@ -14,16 +14,14 @@ pub async fn handle_insert(
     let mut local_data = Vec::new();
     let mut forward_data = Vec::new();
 
+    log_message!(
+        data,
+        "Handling insert request for {} data items",
+        data_to_ins.len()
+    );
+
     for item in data_to_ins.iter() {
         let data_hash = hash(&item.key);
-        log_message!(data, "Handling insert request for key: {}", item.key);
-        log_message!(
-            data,
-            "Hash values - Data: [{}], Node: [{}], Predecessor: [{}]",
-            data_hash,
-            node_hash,
-            prev_hash
-        );
 
         if is_between(prev_hash, data_hash, node_hash) {
             local_data.push(item.clone());
@@ -33,7 +31,7 @@ pub async fn handle_insert(
     }
 
     if !local_data.is_empty() {
-        log_message!(data, "Data belongs to this node, inserting locally");
+        log_message!(data, "{} data items belong to this node", local_data.len());
         match data.insert_batch_data(local_data).await {
             Ok(_) => {
                 log_message!(data, "Data inserted successfully");
@@ -46,7 +44,7 @@ pub async fn handle_insert(
         }
     } else if !forward_data.is_empty() {
         // Forward to successor if data doesn't belong here
-        if let Some(successor) = &node_state.successor {
+        if let Some(successor) = node_state.successor.get_first() {
             log_message!(data, "Forwarding data to successor node: {}", successor);
             send_post_request!(&format!("http://{}/insert", successor), forward_data);
             log_message!(data, "Data forwarded successfully to successor");

@@ -49,6 +49,9 @@ pub enum Message {
     Leave {
         node_id: String,
     },
+    Joined {
+        node_id: String,
+    },
     ReqFinger {
         from: String,
         index: usize,
@@ -59,6 +62,13 @@ pub enum Message {
     },
     CheckNode {
         node_id: String,
+    },
+    ReqSuccessor {
+        from: String,
+    },
+    ResSuccessor {
+        from: String,
+        successor: String,
     },
     Ping,
     Pong,

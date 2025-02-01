@@ -9,7 +9,7 @@ pub async fn lookup_req_handler(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let hash_key = hash(&key);
     let hash_node_id = hash(&ns.id);
-    let hash_successor_id = hash(&ns.successor.as_ref().unwrap());
+    let hash_successor_id = hash(&ns.successor.get_first().unwrap());
     let hash_predecessor_id = hash(&ns.predecessor.as_ref().unwrap());
 
     if is_between(hash_predecessor_id, hash_key, hash_node_id) {
@@ -26,7 +26,7 @@ pub async fn lookup_req_handler(
     } else if is_between(hash_node_id, hash_key, hash_successor_id) {
         // case 2: key belongs to the successor
         match send_post_request!(
-            &format!("http://{}/msg", ns.successor.as_ref().unwrap()),
+            &format!("http://{}/msg", ns.successor.get_first().unwrap()),
             Message::LookupReq {
                 key: key.clone(),
                 hops: hops + 1

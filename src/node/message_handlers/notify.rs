@@ -35,7 +35,7 @@ pub async fn notify_handler(
             .remove_data(Some(hash_predecessor_id), Some(hash_sender))
             .await?;
     } else {
-        log_message!(app_state_clone, "Did not update predecessor");
+        // log_message!(app_state_clone, "Did not update predecessor");
     }
 
     Ok(())

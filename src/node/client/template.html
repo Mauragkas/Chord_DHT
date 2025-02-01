@@ -186,7 +186,7 @@
             }
             .logs-container {
                 max-height: 250px;
-                min-height: 250px;
+                min-height: 300px;
                 overflow-y: auto;
             }
             ::-webkit-scrollbar {
@@ -280,7 +280,7 @@
                         class="content-bg rounded-lg p-4 border border-opacity-10"
                         style="border-color: var(--ayu-border)"
                     >
-                        <div class="node-info" style="min-height: 250px">
+                        <div class="node-info logs-container">
                             <p>
                                 Prev:
                                 <span class="font-semibold"
@@ -291,10 +291,10 @@
                                 Node ID:
                                 <span class="font-semibold">{{node_id}}</span>
                             </p>
-                            <p>
-                                Succ:
-                                <span class="font-semibold">{{successor}}</span>
-                            </p>
+                            <p>Succ:</p>
+                            <ul class="list-disc pl-6 space-y-1">
+                                {{successor}}
+                            </ul>
                             <p>Finger Table:</p>
                             <ul class="list-disc pl-6 space-y-1">
                                 {finger_table}
@@ -371,12 +371,12 @@
                 <!-- Data Section -->
                 <div class="col-span-12 card rounded-lg shadow-lg p-6">
                     <div class="flex items-center mb-4">
-                        <h2
-                            class="text-xl font-semibold"
-                            style="color: var(--ayu-yellow)"
-                        >
+                        <h2 class="text-xl font-semibold" style="color: var(--ayu-yellow)">
                             Node Data
                         </h2>
+                        <span class="ml-3 px-2.5 py-0.5 rounded-full text-sm font-medium badge-live">
+                            {data_count} items
+                        </span>
                     </div>
                     <div
                         class="content-bg rounded-lg p-4 border border-opacity-10"

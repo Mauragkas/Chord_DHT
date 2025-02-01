@@ -7,7 +7,10 @@ pub async fn finger_req_handler(
     app_state: web::Data<Node>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let target_id = ns.id.clone();
-    let successor_id = ns.successor.as_ref().unwrap().clone();
+    let successor_id = match ns.successor.get_first() {
+        Some(id) => id.clone(),
+        None => return Ok(()),
+    };
 
     if is_between(hash(&target_id), index as u32, hash(&successor_id)) {
         let _ = send_post_request!(

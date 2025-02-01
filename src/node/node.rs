@@ -23,7 +23,6 @@ impl Node {
             None => format!("{}:3000", *IP),
         };
         let node_state = Arc::new(Mutex::new(NodeState::new(node_id.clone())));
-        // set node state successor and predecessor to itself
 
         let (tx, mut rx) = mpsc::channel(*DEFAULT_CHANNEL_SIZE);
 
@@ -46,18 +45,126 @@ impl Node {
             loop {
                 interval.tick().await;
                 let ns = node_state_clone.lock().await.clone();
-                if ns.successor != Some(ns.id.clone()) {
-                    let _ = tx_clone
-                        .send(Message::ReqFinger {
-                            from: ns.id.clone(),
-                            index: ns.finger_table.get_first_entry() as usize,
-                        })
-                        .await;
+                if let Some(succ) = ns.successor.get_first() {
+                    if *succ != ns.id {
+                        let _ = tx_clone
+                            .send(Message::ReqFinger {
+                                from: ns.id.clone(),
+                                index: ns.finger_table.get_first_entry() as usize,
+                            })
+                            .await;
+                    }
+                }
+            }
+        });
+
+        // stabilize the ring periodically
+        let node_state_clone = node_state.clone();
+        let app_state_clone = app_state.clone();
+        let tx_clone = tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let mut interval = interval(std::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                let mut ns = node_state_clone.lock().await;
+
+                // Skip if we're alone in the ring
+                if ns.successor.get_first() == Some(&ns.id) {
+                    continue;
+                }
+
+                // Check current successor list and remove dead nodes
+                let mut i = 0;
+                while i < *N {
+                    if let Some(succ) = ns.successor.entries[i].clone() {
+                        // Try to ping the successor
+                        let is_alive = match send_post_request!(
+                            &format!("http://{}/msg", succ),
+                            Message::Ping
+                        ) {
+                            Ok(response) => response.status().is_success(),
+                            Err(_) => false,
+                        };
+
+                        if !is_alive {
+                            log_message!(
+                                app_state_clone,
+                                "Successor {} is dead, removing from successor list",
+                                succ
+                            );
+                            // Remove dead successor
+                            ns.successor.remove_successor(&succ);
+                            // Don't increment i as we need to check the shifted successor
+                            continue;
+                        }
+                    }
+                    i += 1;
+                }
+
+                // If we lost our immediate successor, promote the next alive successor
+                if ns.successor.get_first().is_none() {
+                    for i in 1..*N {
+                        if let Some(succ) = ns.successor.entries[i].clone() {
+                            log_message!(
+                                app_state_clone,
+                                "Promoting {} to immediate successor",
+                                succ
+                            );
+                            ns.successor.clear();
+                            ns.successor.insert_first(succ);
+                            break;
+                        }
+                    }
+                }
+
+                // Update successor list with successors' successors
+                if let Some(immediate_succ) = ns.successor.get_first().cloned() {
+                    let res = send_get_request!(&format!("http://{}/successors", immediate_succ));
+                    if let Ok(response) = res {
+                        if let Ok(succ_list) = response.json::<Vec<String>>().await {
+                            let mut new_successors = vec![Some(immediate_succ)];
+
+                            // Add successors' successors to our list
+                            for succ in succ_list.into_iter().take(*N - 1) {
+                                // Verify each successor is alive before adding
+                                if send_post_request!(
+                                    &format!("http://{}/msg", succ),
+                                    Message::Ping
+                                )
+                                .is_ok()
+                                {
+                                    new_successors.push(Some(succ));
+                                }
+                            }
+
+                            // Pad with None if we don't have enough successors
+                            while new_successors.len() < *N {
+                                new_successors.push(None);
+                            }
+
+                            // Update successor list
+                            for (i, succ) in new_successors.into_iter().enumerate() {
+                                ns.successor.insert(i, succ);
+                            }
+                        }
+                    }
+                }
+
+                // If we still have a valid immediate successor, notify it
+                if let Some(succ) = ns.successor.get_first() {
+                    let _ = send_post_request!(
+                        &format!("http://{}/msg", succ),
+                        Message::Notify {
+                            node_id: ns.id.clone()
+                        }
+                    );
                 }
             }
         });
 
         let node_state_clone = node_state.clone();
+        let app_state_clone = app_state.clone();
         let tx_clone = tx.clone();
         tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
@@ -135,7 +242,8 @@ impl Node {
                     Message::IAmYourSuccessor { node_id } => {
                         log_message!(app_state_clone, "Update successor to node {}", node_id);
                         let mut ns = node_state_clone.lock().await;
-                        ns.successor = Some(node_id.clone());
+                        ns.successor.clear();
+                        ns.successor.insert_first(node_id.clone());
                     }
                     Message::Data { from, data } => {
                         log_message!(app_state_clone, "Transfer data to node {}", from);
@@ -184,7 +292,7 @@ impl Node {
     pub async fn leave(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut node_state = self.node_state.lock().await;
         let node_id = node_state.id.clone();
-        let successor = node_state.successor.clone().unwrap();
+        let successor = node_state.successor.get_first().unwrap().clone();
         let predecessor = node_state.predecessor.clone().unwrap();
 
         // Only proceed if the node is not the only node in the ring
@@ -227,7 +335,9 @@ impl Node {
             self.db.lock().await.execute("DELETE FROM data", [])?;
 
             // 6. Update node_state's successor and predecessor
-            node_state.successor = Some(node_id.clone());
+            // node_state.successor = Some(node_id.clone());
+            node_state.successor.clear();
+            node_state.successor.insert_first(node_id.clone());
             node_state.predecessor = Some(node_id.clone());
             node_state.finger_table.clear();
 
@@ -333,5 +443,11 @@ impl Node {
         }
 
         Ok(())
+    }
+    async fn is_node_alive(&self, node_id: &str) -> bool {
+        match send_post_request!(&format!("http://{}/msg", node_id), Message::Ping) {
+            Ok(response) => response.status().is_success(),
+            Err(_) => false,
+        }
     }
 }

@@ -14,5 +14,6 @@ pub mod handlers;
 pub mod helper;
 pub mod message_handlers;
 pub mod node;
+pub mod succ_table;
 
 const HTML_PATH: &str = "./src/node/client/template.html";

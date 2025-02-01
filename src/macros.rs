@@ -65,3 +65,35 @@ macro_rules! send_post_request {
         result
     }};
 }
+
+#[macro_export]
+macro_rules! send_get_request {
+    ($url:expr) => {
+        send_get_request!($url, 3) // Default to 3 retries
+    };
+    ($url:expr, $max_retries:expr) => {{
+        let client = reqwest::Client::new();
+        let mut attempts = 0;
+        let result = loop {
+            match client.get($url).send().await {
+                Ok(response) => {
+                    break Ok(response);
+                }
+                Err(e) => {
+                    attempts += 1;
+                    if attempts < $max_retries {
+                        // Exponential backoff: wait 2^attempts * 100ms
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            100 * (2_u64.pow(attempts as u32)),
+                        ))
+                        .await;
+                        continue;
+                    } else {
+                        break Err(e);
+                    }
+                }
+            }
+        };
+        result
+    }};
+}

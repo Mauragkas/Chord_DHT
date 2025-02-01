@@ -120,6 +120,9 @@ pub async fn handle_index(data: web::Data<Node>) -> impl Responder {
         },
     );
 
+    let data_count = data_vec.len();
+    html = html.replace("{data_count}", &data_count.to_string());
+
     let data_html = data_vec
         .iter()
         .map(|data| format!("<li>[{}] {}: {}</li>", data.0, data.1, data.2))

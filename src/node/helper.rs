@@ -63,7 +63,12 @@ pub async fn run_server(app_state: web::Data<Node>) -> std::io::Result<()> {
     println!("(Node)Server running at http://{}", id.clone());
 
     app_state.node_state.lock().await.predecessor = Some(id.clone());
-    app_state.node_state.lock().await.successor = Some(id.clone());
+    app_state
+        .node_state
+        .lock()
+        .await
+        .successor
+        .insert_first(id.clone());
 
     let bind_address = {
         let node_state = app_state.node_state.lock().await;
@@ -77,6 +82,9 @@ pub async fn run_server(app_state: web::Data<Node>) -> std::io::Result<()> {
             .route("/leave", web::post().to(handle_leave))
             .route("/join", web::post().to(handle_join))
             .route("/insert", web::post().to(handle_insert))
+            .route("/successor", web::get().to(handle_successor))
+            .route("/successors", web::get().to(handle_successors))
+            .route("/predecessor", web::get().to(handle_predecessor))
             .route(
                 "/msg",
                 web::post().to(move |data: web::Data<Node>, message: web::Json<Message>| {

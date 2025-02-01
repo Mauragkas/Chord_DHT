@@ -1,65 +1,36 @@
-use std::collections::HashMap;
 use std::fmt;
 
 pub struct CircularBuffer<T> {
-    items: HashMap<usize, T>,
-    head: usize,
-    tail: usize,
-    len: usize,
+    items: Vec<T>,
 }
 
 impl<T> CircularBuffer<T> {
     pub fn new() -> Self {
-        CircularBuffer {
-            items: HashMap::new(),
-            head: 0,
-            tail: 0,
-            len: 0,
-        }
+        CircularBuffer { items: Vec::new() }
     }
 
     pub fn len(&self) -> usize {
-        self.len
+        self.items.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len == 0
+        self.items.is_empty()
     }
 
     pub fn contains(&self, data: &T) -> bool
     where
         T: PartialEq,
     {
-        self.items.values().any(|x| x == data)
+        self.items.contains(data)
     }
 
     pub fn push_back(&mut self, data: T) {
-        if self.is_empty() {
-            self.items.insert(0, data);
-            self.head = 0;
-            self.tail = 0;
-        } else {
-            self.tail = (self.tail + 1) % (self.len + 1);
-            self.items.insert(self.tail, data);
-        }
-        self.len += 1;
+        self.items.push(data);
     }
 
     #[allow(dead_code)]
     pub fn push_front(&mut self, data: T) {
-        if self.is_empty() {
-            self.items.insert(0, data);
-            self.head = 0;
-            self.tail = 0;
-        } else {
-            self.head = if self.head == 0 {
-                self.len
-            } else {
-                self.head - 1
-            };
-            self.items.insert(self.head, data);
-        }
-        self.len += 1;
+        self.items.insert(0, data);
     }
 
     #[allow(dead_code)]
@@ -67,102 +38,47 @@ impl<T> CircularBuffer<T> {
         if self.is_empty() {
             None
         } else {
-            let item = self.items.remove(&self.head);
-            self.len -= 1;
-            if !self.is_empty() {
-                self.head = (self.head + 1) % (self.len + 2);
-            }
-            item
+            Some(self.items.remove(0))
         }
     }
 
     #[allow(dead_code)]
     pub fn pop_back(&mut self) -> Option<T> {
-        if self.is_empty() {
-            None
-        } else {
-            let item = self.items.remove(&self.tail);
-            self.len -= 1;
-            if !self.is_empty() {
-                self.tail = if self.tail == 0 {
-                    self.len
-                } else {
-                    self.tail - 1
-                };
-            }
-            item
-        }
+        self.items.pop()
     }
 
     #[allow(dead_code)]
     pub fn front(&self) -> Option<&T> {
-        self.items.get(&self.head)
+        self.items.first()
     }
 
     #[allow(dead_code)]
     pub fn back(&self) -> Option<&T> {
-        self.items.get(&self.tail)
+        self.items.last()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        let len = self.len;
-        let head = self.head;
-        let items = &self.items;
-
-        (0..len).filter_map(move |i| {
-            let actual_index = (head + i) % (len + 1);
-            items.get(&actual_index)
-        })
+        self.items.iter()
     }
 
     pub fn get(&self, index: usize) -> Option<&T> {
-        if index >= self.len {
-            None
-        } else {
-            let actual_index = (self.head + index) % (self.len + 1);
-            self.items.get(&actual_index)
-        }
+        self.items.get(index)
     }
 
     pub fn remove(&mut self, index: usize) -> Option<T> {
-        if index >= self.len {
+        if index >= self.len() {
             None
         } else {
-            let actual_index = (self.head + index) % (self.len + 1);
-            let item = self.items.remove(&actual_index);
-
-            // Shift all items after the removed one
-            for i in actual_index..self.tail {
-                if let Some(next_item) = self.items.remove(&(i + 1)) {
-                    self.items.insert(i, next_item);
-                }
-            }
-
-            self.len -= 1;
-            if self.len > 0 {
-                self.tail = if self.tail == 0 {
-                    self.len
-                } else {
-                    self.tail - 1
-                };
-            }
-            item
+            Some(self.items.remove(index))
         }
     }
 
     pub fn rotate(&mut self) {
-        if self.len <= 1 {
+        if self.len() <= 1 {
             return;
         }
-
-        if let Some(first) = self.items.remove(&self.head) {
-            let new_head = (self.head + 1) % (self.len + 1);
-            let new_tail = (self.tail + 1) % (self.len + 1);
-
-            self.items.insert(new_tail, first);
-            self.head = new_head;
-            self.tail = new_tail;
-        }
+        let item = self.items.remove(0);
+        self.items.push(item);
     }
 }
 
@@ -172,6 +88,5 @@ impl<T: fmt::Debug> fmt::Debug for CircularBuffer<T> {
     }
 }
 
-// Implement Send and Sync for CircularBuffer if T is Send
 unsafe impl<T: Send> Send for CircularBuffer<T> {}
 unsafe impl<T: Sync> Sync for CircularBuffer<T> {}
