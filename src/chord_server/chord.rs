@@ -6,8 +6,8 @@ use circula_buffer::CircularBuffer;
 use data::Data;
 use futures::{StreamExt, TryStreamExt};
 use msg::Message;
-use std::fs;
 use std::sync::Arc;
+use std::{fs, io::Write};
 use tokio::sync::{mpsc, Mutex};
 
 // Represents a node in the Chord ring network
@@ -175,11 +175,12 @@ impl ChordRingInterface for ChordRing {
     }
 
     async fn run(&self) -> std::io::Result<(String, u16)> {
-        println!(
-            "\x1b[33mRunning ChordRing server on \x1b[35mhttp://{}:{}\x1b[0m",
+        print!(
+            "\x1b[2K\r\x1b[33mRunning ChordRing server on \x1b[35mhttp://{}:{}\x1b[0m\n",
             IP.clone(),
             *PORT
         );
+        std::io::stdout().flush().unwrap();
         log_message!(self, "Running ChordRing server on port: {}", *PORT);
 
         let app_state = AppState {

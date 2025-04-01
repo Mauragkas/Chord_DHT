@@ -1,11 +1,5 @@
 use super::*;
 
-pub async fn handle_successor(data: web::Data<Node>) -> impl Responder {
-    let node = data.get_ref();
-    let successor = &node.node_state.lock().await.successor.entries[0];
-    HttpResponse::Ok().json(successor)
-}
-
 pub async fn handle_successors(data: web::Data<Node>) -> impl Responder {
     let node = data.get_ref();
     let successors: Vec<String> = node

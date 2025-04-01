@@ -4,7 +4,7 @@ pub async fn handle_join(data: web::Data<Node>) -> impl Responder {
     let node_state = data.node_state.lock().await;
     let node_id = node_state.id.clone();
     send_post_request!(
-        &format!("http://{}/msg", format!("{}:{}", *IP, *PORT)),
+        &format!("http://{}/msg", format!("{}", CHORD_RING.lock().await)),
         Message::ReqKnownNode { node_id }
     );
 

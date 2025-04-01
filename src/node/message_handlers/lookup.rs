@@ -50,7 +50,7 @@ pub async fn lookup_req_handler(
         let finger_entries = &ns.finger_table.entries;
         let mut found = false;
 
-        for i in (0..finger_entries.len() - 1) {
+        for i in 0..finger_entries.len() - 1 {
             let entry1 = &finger_entries[i];
             let entry2 = &finger_entries[i + 1];
 

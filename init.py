@@ -141,9 +141,6 @@ for i in range(num_nodes):
     else:
         node_pids.append(node_pid)
 
-# wait 5 secs
-time.sleep(5)
-
 # Start resource monitoring in a separate process
 monitor_pid = os.fork()
 if monitor_pid == 0:

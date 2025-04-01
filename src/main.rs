@@ -1,4 +1,4 @@
-// #![allow(dead_code)]
+#![allow(unused_must_use)] // this is for the macros to ignore the Result type
 mod chord_server;
 mod data_misc;
 pub mod hash;

@@ -63,19 +63,4 @@ impl FingerTable {
             false
         }
     }
-
-    pub async fn get_entry(&self, index: u32) -> String {
-        self.entries
-            .iter()
-            .find(|entry| entry.start == index)
-            .and_then(|entry| entry.id.clone())
-            .expect("Entry ID is None")
-    }
-
-    pub fn get_first_empty_entry(&self) -> Option<u32> {
-        self.entries
-            .iter()
-            .find(|entry| entry.id.is_none())
-            .map(|entry| entry.start)
-    }
 }

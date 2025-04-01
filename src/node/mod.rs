@@ -1,7 +1,5 @@
-#![allow(unused)]
 use super::*;
 use data::*;
-use finger_table::*;
 use handlers::*;
 use hash::hash;
 use helper::*;

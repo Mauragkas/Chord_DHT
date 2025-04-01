@@ -82,7 +82,6 @@ pub async fn run_server(app_state: web::Data<Node>) -> std::io::Result<()> {
             .route("/leave", web::post().to(handle_leave))
             .route("/join", web::post().to(handle_join))
             .route("/insert", web::post().to(handle_insert))
-            .route("/successor", web::get().to(handle_successor))
             .route("/successors", web::get().to(handle_successors))
             .route("/predecessor", web::get().to(handle_predecessor))
             .route(

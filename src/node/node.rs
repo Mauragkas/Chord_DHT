@@ -1,6 +1,4 @@
 use super::*;
-use finger_table::finger_table::FingerTable;
-use message_handlers::known_node;
 use tokio::time::interval;
 
 lazy_static::lazy_static! {
@@ -35,7 +33,6 @@ impl Node {
 
         // Spawn a task to handle messages from the channel
         let node_state_clone = node_state.clone();
-        let app_state_clone = app_state.clone();
         let tx_clone = tx.clone();
 
         // update fingers periodically
@@ -61,7 +58,6 @@ impl Node {
         // stabilize the ring periodically
         let node_state_clone = node_state.clone();
         let app_state_clone = app_state.clone();
-        let tx_clone = tx.clone();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             let mut interval = interval(std::time::Duration::from_secs(5));
@@ -93,6 +89,36 @@ impl Node {
                                 "Successor {} is dead, removing from successor list",
                                 succ
                             );
+
+                            if let Some(next_succ) =
+                                ns.successor.entries.get(i + 1).cloned().flatten()
+                            {
+                                // Notify the next successor that we are its new predecessor
+                                if let Some(prev_succ) = ns.successor.entries.get(i - 1).cloned() {
+                                    let _ = send_post_request!(
+                                        &format!("http://{}/msg", next_succ),
+                                        Message::IAmYourPredecessor {
+                                            node_id: prev_succ.unwrap()
+                                        }
+                                    );
+                                } else {
+                                    let _ = send_post_request!(
+                                        &format!("http://{}/msg", next_succ),
+                                        Message::IAmYourPredecessor {
+                                            node_id: ns.id.clone()
+                                        }
+                                    );
+                                }
+
+                                // Also notify the chord ring about the dead node
+                                let _ = send_post_request!(
+                                    &format!("http://{}/msg", CHORD_RING.lock().await.clone()),
+                                    Message::Leave {
+                                        node_id: succ.clone()
+                                    }
+                                );
+                            }
+
                             // Remove dead successor
                             ns.successor.remove_successor(&succ);
                             // Don't increment i as we need to check the shifted successor
@@ -165,7 +191,6 @@ impl Node {
 
         let node_state_clone = node_state.clone();
         let app_state_clone = app_state.clone();
-        let tx_clone = tx.clone();
         tokio::spawn(async move {
             while let Some(message) = rx.recv().await {
                 match message {
@@ -247,7 +272,7 @@ impl Node {
                     }
                     Message::Data { from, data } => {
                         log_message!(app_state_clone, "Transfer data to node {}", from);
-                        app_state_clone.insert_batch_data(data).await;
+                        let _ = app_state_clone.insert_batch_data(data).await;
                     }
                     Message::NodeExists => {
                         log_message!(app_state_clone, "Node already exists in the ring");
@@ -298,7 +323,7 @@ impl Node {
         // Only proceed if the node is not the only node in the ring
         if successor != node_id.clone() && predecessor != node_id.clone() {
             // 1. Transfer data to the successor
-            send_post_request!(
+            let _ = send_post_request!(
                 &format!("http://{}/msg", successor),
                 Message::Data {
                     from: node_id.clone(),
@@ -307,7 +332,7 @@ impl Node {
             );
 
             // 2. Notify the successor of the node's departure
-            send_post_request!(
+            let _ = send_post_request!(
                 &format!("http://{}/msg", successor),
                 Message::IAmYourPredecessor {
                     node_id: predecessor.clone()
@@ -315,7 +340,7 @@ impl Node {
             );
 
             // 3. Notify the predecessor of the node's departure
-            send_post_request!(
+            let _ = send_post_request!(
                 &format!("http://{}/msg", predecessor),
                 Message::IAmYourSuccessor {
                     node_id: successor.clone()
@@ -324,7 +349,7 @@ impl Node {
 
             // 4. Send leave message to the ChordRing
             let chord_ring = CHORD_RING.lock().await.to_string();
-            send_post_request!(
+            let _ = send_post_request!(
                 &format!("http://{}/msg", chord_ring),
                 Message::Leave {
                     node_id: node_id.clone()
@@ -443,11 +468,5 @@ impl Node {
         }
 
         Ok(())
-    }
-    async fn is_node_alive(&self, node_id: &str) -> bool {
-        match send_post_request!(&format!("http://{}/msg", node_id), Message::Ping) {
-            Ok(response) => response.status().is_success(),
-            Err(_) => false,
-        }
     }
 }
